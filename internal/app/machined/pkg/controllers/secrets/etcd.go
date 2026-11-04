@@ -79,7 +79,7 @@ func (ctrl *EtcdController) Outputs() []controller.Output {
 
 // Run implements controller.Controller interface.
 //
-//nolint:gocyclo
+//nolint:gocyclo,cyclop
 func (ctrl *EtcdController) Run(ctx context.Context, r controller.Runtime, _ *zap.Logger) error {
 	for {
 		select {
@@ -102,6 +102,24 @@ func (ctrl *EtcdController) Run(ctx context.Context, r controller.Runtime, _ *za
 		}
 
 		etcdRoot := etcdRootRes.TypedSpec()
+
+		// external etcd: nothing to sign, Talos and kube-apiserver use the provided client cert
+		if etcdRoot.EtcdClient != nil {
+			if err = safe.WriterModify(ctx, r, secrets.NewEtcd(), func(r *secrets.Etcd) error {
+				*r.TypedSpec() = secrets.EtcdCertsSpec{
+					EtcdAdmin:     etcdRoot.EtcdClient,
+					EtcdAPIServer: etcdRoot.EtcdClient,
+				}
+
+				return nil
+			}); err != nil {
+				return err
+			}
+
+			r.ResetRestartBackoff()
+
+			continue
+		}
 
 		// wait for network to be ready as it might change IPs/hostname
 		networkResource, err := safe.ReaderGet[*network.Status](ctx, r, resource.NewMetadata(network.NamespaceName, network.StatusType, network.StatusID, resource.VersionUndefined))

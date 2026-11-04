@@ -101,8 +101,13 @@ func (ctrl *PKIController) Run(ctx context.Context, r controller.Runtime, _ *zap
 			return fmt.Errorf("failed to write CA certificate: %w", err)
 		}
 
-		if err = os.WriteFile(constants.EtcdCAKey, rootScrts.TypedSpec().EtcdCA.Key, 0o400); err != nil {
-			return fmt.Errorf("failed to write CA key: %w", err)
+		external := rootScrts.TypedSpec().EtcdClient != nil
+
+		// external etcd has no CA key, server and peer certs
+		if !external {
+			if err = os.WriteFile(constants.EtcdCAKey, rootScrts.TypedSpec().EtcdCA.Key, 0o400); err != nil {
+				return fmt.Errorf("failed to write CA key: %w", err)
+			}
 		}
 
 		etcdCerts := scrts.TypedSpec()
@@ -111,16 +116,19 @@ func (ctrl *PKIController) Run(ctx context.Context, r controller.Runtime, _ *zap
 			getter   func() *x509.PEMEncodedCertificateAndKey
 			keyPath  string
 			certPath string
+			local    bool
 		}{
 			{
 				getter:   func() *x509.PEMEncodedCertificateAndKey { return etcdCerts.Etcd },
 				keyPath:  constants.EtcdKey,
 				certPath: constants.EtcdCert,
+				local:    true,
 			},
 			{
 				getter:   func() *x509.PEMEncodedCertificateAndKey { return etcdCerts.EtcdPeer },
 				keyPath:  constants.EtcdPeerKey,
 				certPath: constants.EtcdPeerCert,
+				local:    true,
 			},
 			{
 				getter:   func() *x509.PEMEncodedCertificateAndKey { return etcdCerts.EtcdAdmin },
@@ -128,6 +136,10 @@ func (ctrl *PKIController) Run(ctx context.Context, r controller.Runtime, _ *zap
 				certPath: constants.EtcdAdminCert,
 			},
 		} {
+			if keypair.local && external {
+				continue
+			}
+
 			if err = os.WriteFile(keypair.keyPath, keypair.getter().Key, 0o400); err != nil {
 				return err
 			}

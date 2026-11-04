@@ -64,14 +64,22 @@ func NewRootEtcdController() *RootEtcdController {
 				secrets.NewEtcdRoot(secrets.EtcdRootID), true,
 				func(cfg *config.MachineConfig) bool {
 					// skip the controller if the etcd secret is not present
-					return cfg.Config().Cluster().Etcd().CA() != nil
+					return cfg.Config().Cluster().Etcd().CA() != nil || cfg.Config().Cluster().Etcd().External() != nil
 				},
 			),
 			TransformFunc: func(ctx context.Context, r controller.Reader, logger *zap.Logger, cfg *config.MachineConfig, res *secrets.EtcdRoot) error {
 				cfgProvider := cfg.Config()
 				etcdSecrets := res.TypedSpec()
 
+				if external := cfgProvider.Cluster().Etcd().External(); external != nil {
+					etcdSecrets.EtcdCA = &x509.PEMEncodedCertificateAndKey{Crt: external.CA().Crt}
+					etcdSecrets.EtcdClient = external.Client()
+
+					return nil
+				}
+
 				etcdSecrets.EtcdCA = cfgProvider.Cluster().Etcd().CA()
+				etcdSecrets.EtcdClient = nil
 
 				return nil
 			},

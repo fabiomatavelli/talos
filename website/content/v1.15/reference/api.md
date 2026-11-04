@@ -13782,6 +13782,7 @@ EtcdRootSpec describes etcd CA secrets.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | etcd_ca | [common.PEMEncodedCertificateAndKey](#common.PEMEncodedCertificateAndKey) |  |  |
+| etcd_client | [common.PEMEncodedCertificateAndKey](#common.PEMEncodedCertificateAndKey) |  | EtcdClient is set only for an external etcd: CA carries no key, and this client cert is used as is. |
 
 
 
