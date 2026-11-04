@@ -24,6 +24,7 @@ import (
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 	"github.com/siderolabs/talos/pkg/machinery/config/machine"
 	"github.com/siderolabs/talos/pkg/machinery/resources/config"
+	"github.com/siderolabs/talos/pkg/machinery/resources/etcd"
 	"github.com/siderolabs/talos/pkg/machinery/resources/k8s"
 	"github.com/siderolabs/talos/pkg/machinery/resources/network"
 	"github.com/siderolabs/talos/pkg/machinery/resources/runtime"
@@ -97,6 +98,12 @@ func (ctrl *MachineStatusController) Inputs() []controller.Input {
 			Type:      secrets.KubeletType,
 			Kind:      controller.InputWeak,
 		},
+		{
+			Namespace: etcd.NamespaceName,
+			Type:      etcd.ConfigType,
+			ID:        optional.Some(etcd.ConfigID),
+			Kind:      controller.InputWeak,
+		},
 	}
 }
 
@@ -153,6 +160,13 @@ func (ctrl *MachineStatusController) Run(ctx context.Context, r controller.Runti
 			}
 		}
 
+		etcdConfig, err := safe.ReaderGetByID[*etcd.Config](ctx, r, etcd.ConfigID)
+		if err != nil && !state.IsNotFoundError(err) {
+			return fmt.Errorf("error getting etcd config: %w", err)
+		}
+
+		localEtcd := etcdConfig == nil || !etcdConfig.TypedSpec().External()
+
 		ctrl.mu.Lock()
 		currentStage := ctrl.currentStage
 		ctrl.mu.Unlock()
@@ -161,7 +175,7 @@ func (ctrl *MachineStatusController) Run(ctx context.Context, r controller.Runti
 
 		var unmetConditions []runtime.UnmetCondition
 
-		for _, check := range ctrl.getReadinessChecks(currentStage, machineType, hasKubernetes) {
+		for _, check := range ctrl.getReadinessChecks(currentStage, machineType, hasKubernetes, localEtcd) {
 			if err := check.f(ctx, r); err != nil {
 				ready = false
 
@@ -197,7 +211,7 @@ type readinessCheck struct {
 	f    func(context.Context, controller.Runtime) error
 }
 
-func (ctrl *MachineStatusController) getReadinessChecks(stage runtime.MachineStage, machineType machine.Type, hasKubernetes bool) []readinessCheck {
+func (ctrl *MachineStatusController) getReadinessChecks(stage runtime.MachineStage, machineType machine.Type, hasKubernetes, localEtcd bool) []readinessCheck {
 	requiredServices := []string{
 		"apid",
 		"machined",
@@ -211,7 +225,7 @@ func (ctrl *MachineStatusController) getReadinessChecks(stage runtime.MachineSta
 	}
 
 	if machineType.IsControlPlane() {
-		if hasKubernetes {
+		if hasKubernetes && localEtcd {
 			requiredServices = append(
 				requiredServices,
 				"etcd",

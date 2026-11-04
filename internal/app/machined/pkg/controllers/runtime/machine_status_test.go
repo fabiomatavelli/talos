@@ -22,6 +22,7 @@ import (
 	machineapi "github.com/siderolabs/talos/pkg/machinery/api/machine"
 	"github.com/siderolabs/talos/pkg/machinery/config/machine"
 	"github.com/siderolabs/talos/pkg/machinery/resources/config"
+	"github.com/siderolabs/talos/pkg/machinery/resources/etcd"
 	"github.com/siderolabs/talos/pkg/machinery/resources/k8s"
 	"github.com/siderolabs/talos/pkg/machinery/resources/network"
 	"github.com/siderolabs/talos/pkg/machinery/resources/runtime"
@@ -196,4 +197,66 @@ func (suite *MachineStatusSuite) TestReconcile() {
 	)
 
 	suite.assertMachineStatus(runtime.MachineStageShuttingDown, true, nil)
+}
+
+func TestMachineStatusExternalEtcdSuite(t *testing.T) {
+	// own event channel, as the watcher of another suite would consume the events
+	eventCh := make(chan v1alpha1runtime.EventInfo)
+
+	suite.Run(t, &MachineStatusExternalEtcdSuite{
+		eventCh: eventCh,
+		Timeout: 5 * time.Second,
+		AfterSetup: func(suite *ctest.DefaultSuite) {
+			suite.Require().NoError(suite.Runtime().RegisterController(&runtimectrl.MachineStatusController{
+				V1Alpha1Events: &mockWatcher{eventCh: eventCh},
+			}))
+		},
+	})
+}
+
+type MachineStatusExternalEtcdSuite struct {
+	MachineStatusSuite
+}
+
+// TestReconcile overrides MachineStatusSuite.TestReconcile.
+func (suite *MachineStatusExternalEtcdSuite) TestReconcile() {
+	suite.Create(secrets.NewKubelet(secrets.KubeletID))
+
+	machineType := config.NewMachineType()
+	machineType.SetMachineType(machine.TypeControlPlane)
+	suite.Create(machineType)
+
+	etcdConfig := etcd.NewConfig(etcd.NamespaceName, etcd.ConfigID)
+	etcdConfig.TypedSpec().ExternalEndpoints = []string{"https://10.0.0.1:2379"}
+	suite.Create(etcdConfig)
+
+	timeStatus := timeres.NewStatus()
+	timeStatus.TypedSpec().Synced = true
+	suite.Create(timeStatus)
+
+	networkStatus := network.NewStatus(network.NamespaceName, network.StatusID)
+	networkStatus.TypedSpec().AddressReady = true
+	networkStatus.TypedSpec().ConnectivityReady = true
+	networkStatus.TypedSpec().EtcFilesReady = true
+	networkStatus.TypedSpec().HostnameReady = true
+	suite.Create(networkStatus)
+
+	for _, action := range []machineapi.SequenceEvent_Action{machineapi.SequenceEvent_START, machineapi.SequenceEvent_STOP} {
+		suite.eventCh <- v1alpha1runtime.EventInfo{
+			Payload: &machineapi.SequenceEvent{
+				Sequence: v1alpha1runtime.SequenceBoot.String(),
+				Action:   action,
+			},
+		}
+	}
+
+	// no etcd service with external etcd
+	for _, service := range []string{"apid", "kubelet", "machined", "trustd"} {
+		serviceStatus := v1alpha1.NewService(service)
+		serviceStatus.TypedSpec().Running = true
+		serviceStatus.TypedSpec().Healthy = true
+		suite.Create(serviceStatus)
+	}
+
+	suite.assertMachineStatus(runtime.MachineStageRunning, true, nil)
 }
