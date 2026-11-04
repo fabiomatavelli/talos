@@ -943,6 +943,10 @@ func (k *KubeletConfig) Validate() ([]string, error) {
 func (e *EtcdConfig) Validate() error {
 	var result *multierror.Error
 
+	if e.EtcdExternal != nil {
+		return e.validateExternal()
+	}
+
 	if e.CA() == nil {
 		result = multierror.Append(result, ErrEmptyKeyCert)
 	}
@@ -965,6 +969,42 @@ func (e *EtcdConfig) Validate() error {
 		if _, err := sideronet.ParseSubnetOrAddress(cidr); err != nil {
 			result = multierror.Append(result, fmt.Errorf("etcd listen subnet is not valid: %q", cidr))
 		}
+	}
+
+	return result.ErrorOrNil()
+}
+
+//nolint:gocyclo
+func (e *EtcdConfig) validateExternal() error {
+	var result *multierror.Error
+
+	if e.RootCA != nil || e.ContainerImage != "" || len(e.EtcdExtraArgs) > 0 || e.EtcdSubnet != "" ||
+		len(e.EtcdAdvertisedSubnets) > 0 || len(e.EtcdListenSubnets) > 0 {
+		result = multierror.Append(result, errors.New("etcd ca, image, extraArgs, advertisedSubnets and listenSubnets can't be set with external etcd"))
+	}
+
+	ext := e.EtcdExternal
+
+	if len(ext.ExternalEndpoints) == 0 {
+		result = multierror.Append(result, errors.New("external etcd endpoints are required"))
+	}
+
+	for _, endpoint := range ext.ExternalEndpoints {
+		if u, err := url.Parse(endpoint); err != nil || u.Scheme != "https" || u.Host == "" {
+			result = multierror.Append(result, fmt.Errorf("external etcd endpoint should be a https URL: %q", endpoint))
+		}
+	}
+
+	if ext.ExternalCA == nil || len(ext.ExternalCA.Crt) == 0 {
+		result = multierror.Append(result, errors.New("external etcd ca certificate is required"))
+	}
+
+	if ext.ExternalClient == nil || len(ext.ExternalClient.Crt) == 0 || len(ext.ExternalClient.Key) == 0 {
+		result = multierror.Append(result, errors.New("external etcd client certificate and key are required"))
+	}
+
+	if ext.ExternalPrefix != "" && (!strings.HasPrefix(ext.ExternalPrefix, "/") || strings.HasSuffix(ext.ExternalPrefix, "/")) {
+		result = multierror.Append(result, fmt.Errorf("external etcd prefix should start and not end with '/': %q", ext.ExternalPrefix))
 	}
 
 	return result.ErrorOrNil()

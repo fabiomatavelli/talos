@@ -9,6 +9,7 @@ import (
 
 	"github.com/siderolabs/crypto/x509"
 
+	"github.com/siderolabs/talos/pkg/machinery/config/config"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 )
 
@@ -60,4 +61,33 @@ func (e *EtcdConfig) ListenSubnets() []string {
 	// nothing set, rely on defaults (listen on all interfaces)
 
 	return nil
+}
+
+// External implements the config.Etcd interface.
+func (e *EtcdConfig) External() config.EtcdExternal {
+	if e.EtcdExternal == nil {
+		return nil
+	}
+
+	return e.EtcdExternal
+}
+
+// Endpoints implements the config.EtcdExternal interface.
+func (e *EtcdExternalConfig) Endpoints() []string {
+	return e.ExternalEndpoints
+}
+
+// CA implements the config.EtcdExternal interface.
+func (e *EtcdExternalConfig) CA() *x509.PEMEncodedCertificate {
+	return e.ExternalCA
+}
+
+// Client implements the config.EtcdExternal interface.
+func (e *EtcdExternalConfig) Client() *x509.PEMEncodedCertificateAndKey {
+	return e.ExternalClient
+}
+
+// Prefix implements the config.EtcdExternal interface.
+func (e *EtcdExternalConfig) Prefix() string {
+	return e.ExternalPrefix
 }

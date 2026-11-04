@@ -1369,6 +1369,94 @@ func TestValidate(t *testing.T) {
 			expectedError: "2 errors occurred:\n\t* etcd advertised subnet is not valid: \"1234:\"\n\t* etcd listen subnet is not valid: \"10\"\n\n",
 		},
 		{
+			name: "GoodEtcdExternal",
+			config: &v1alpha1.Config{
+				ConfigVersion: "v1alpha1",
+				MachineConfig: &v1alpha1.MachineConfig{
+					MachineType: "controlplane",
+					MachineCA: &x509.PEMEncodedCertificateAndKey{
+						Crt: []byte("foo"),
+						Key: []byte("bar"),
+					},
+				},
+				ClusterConfig: &v1alpha1.ClusterConfig{
+					ControlPlane: &v1alpha1.ControlPlaneConfig{
+						Endpoint: &v1alpha1.Endpoint{
+							endpointURL,
+						},
+					},
+					EtcdConfig: &v1alpha1.EtcdConfig{
+						EtcdExternal: &v1alpha1.EtcdExternalConfig{
+							ExternalEndpoints: []string{"https://10.0.0.1:2379", "https://etcd.example.com:2379"},
+							ExternalCA:        &x509.PEMEncodedCertificate{Crt: []byte("ca")},
+							ExternalClient:    &x509.PEMEncodedCertificateAndKey{Crt: []byte("crt"), Key: []byte("key")},
+							ExternalPrefix:    "/clusters/foo",
+						},
+					},
+				},
+			},
+			expectedError: "",
+		},
+		{
+			name: "BadEtcdExternal",
+			config: &v1alpha1.Config{
+				ConfigVersion: "v1alpha1",
+				MachineConfig: &v1alpha1.MachineConfig{
+					MachineType: "controlplane",
+					MachineCA: &x509.PEMEncodedCertificateAndKey{
+						Crt: []byte("foo"),
+						Key: []byte("bar"),
+					},
+				},
+				ClusterConfig: &v1alpha1.ClusterConfig{
+					ControlPlane: &v1alpha1.ControlPlaneConfig{
+						Endpoint: &v1alpha1.Endpoint{
+							endpointURL,
+						},
+					},
+					EtcdConfig: &v1alpha1.EtcdConfig{
+						RootCA:            &x509.PEMEncodedCertificateAndKey{},
+						EtcdListenSubnets: []string{"10.0.0.0/8"},
+						EtcdExternal: &v1alpha1.EtcdExternalConfig{
+							ExternalEndpoints: []string{"http://10.0.0.1:2379"},
+							ExternalClient:    &x509.PEMEncodedCertificateAndKey{Crt: []byte("crt")},
+							ExternalPrefix:    "clusters/foo/",
+						},
+					},
+				},
+			},
+			expectedError: "5 errors occurred:\n" +
+				"\t* etcd ca, image, extraArgs, advertisedSubnets and listenSubnets can't be set with external etcd\n" +
+				"\t* external etcd endpoint should be a https URL: \"http://10.0.0.1:2379\"\n" +
+				"\t* external etcd ca certificate is required\n" +
+				"\t* external etcd client certificate and key are required\n" +
+				"\t* external etcd prefix should start and not end with '/': \"clusters/foo/\"\n\n",
+		},
+		{
+			name: "EmptyEtcdExternal",
+			config: &v1alpha1.Config{
+				ConfigVersion: "v1alpha1",
+				MachineConfig: &v1alpha1.MachineConfig{
+					MachineType: "controlplane",
+					MachineCA: &x509.PEMEncodedCertificateAndKey{
+						Crt: []byte("foo"),
+						Key: []byte("bar"),
+					},
+				},
+				ClusterConfig: &v1alpha1.ClusterConfig{
+					ControlPlane: &v1alpha1.ControlPlaneConfig{
+						Endpoint: &v1alpha1.Endpoint{
+							endpointURL,
+						},
+					},
+					EtcdConfig: &v1alpha1.EtcdConfig{
+						EtcdExternal: &v1alpha1.EtcdExternalConfig{},
+					},
+				},
+			},
+			expectedError: "3 errors occurred:\n\t* external etcd endpoints are required\n\t* external etcd ca certificate is required\n\t* external etcd client certificate and key are required\n\n",
+		},
+		{
 			name: "GoodKubeletSubnet",
 			config: &v1alpha1.Config{
 				ConfigVersion: "v1alpha1",

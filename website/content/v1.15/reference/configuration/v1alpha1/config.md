@@ -206,6 +206,21 @@ etcd:
     # # The `advertisedSubnets` field configures the networks to pick etcd advertised IP from.
     # advertisedSubnets:
     #     - 10.0.0.0/8
+
+    # # Use an external etcd cluster instead of running etcd on the control plane nodes.
+    # external:
+    #     # The list of external etcd client endpoints (https URLs).
+    #     endpoints:
+    #         - https://etcd-0.example.com:2379
+    #         - https://etcd-1.example.com:2379
+    #     # The CA certificate used to verify the external etcd server certificates.
+    #     ca:
+    #         crt: LS0tIEVYQU1QTEUgQ0VSVElGSUNBVEUgLS0t
+    #     # The client certificate and key used by kube-apiserver and Talos to access the external etcd.
+    #     client:
+    #         crt: LS0tIEVYQU1QTEUgQ0VSVElGSUNBVEUgLS0t
+    #         key: LS0tIEVYQU1QTEUgS0VZIC0tLQ==
+    #     prefix: /clusters/my-cluster # The key prefix to namespace this cluster's data in the external etcd.
 {{< /highlight >}}</details> | |
 |`externalCloudProvider` |<a href="#Config.cluster.externalCloudProvider">ExternalCloudProviderConfig</a> |External cloud provider configuration. <details><summary>Show example(s)</summary>{{< highlight yaml >}}
 externalCloudProvider:
@@ -244,6 +259,21 @@ cluster:
         # # The `advertisedSubnets` field configures the networks to pick etcd advertised IP from.
         # advertisedSubnets:
         #     - 10.0.0.0/8
+
+        # # Use an external etcd cluster instead of running etcd on the control plane nodes.
+        # external:
+        #     # The list of external etcd client endpoints (https URLs).
+        #     endpoints:
+        #         - https://etcd-0.example.com:2379
+        #         - https://etcd-1.example.com:2379
+        #     # The CA certificate used to verify the external etcd server certificates.
+        #     ca:
+        #         crt: LS0tIEVYQU1QTEUgQ0VSVElGSUNBVEUgLS0t
+        #     # The client certificate and key used by kube-apiserver and Talos to access the external etcd.
+        #     client:
+        #         crt: LS0tIEVYQU1QTEUgQ0VSVElGSUNBVEUgLS0t
+        #         key: LS0tIEVYQU1QTEUgS0VZIC0tLQ==
+        #     prefix: /clusters/my-cluster # The key prefix to namespace this cluster's data in the external etcd.
 {{< /highlight >}}
 
 
@@ -263,6 +293,64 @@ advertisedSubnets:
     - 10.0.0.0/8
 {{< /highlight >}}</details> | |
 |`listenSubnets` |[]string |The `listenSubnets` field configures the networks for the etcd to listen for peer and client connections.<br><br>If `listenSubnets` is not set, but `advertisedSubnets` is set, `listenSubnets` defaults to<br>`advertisedSubnets`.<br><br>If neither `advertisedSubnets` nor `listenSubnets` is set, `listenSubnets` defaults to listen on all addresses.<br><br>IPs can be excluded from the list by using negative match with `!`, e.g `!10.0.0.0/8`.<br>Negative subnet matches should be specified last to filter out IPs picked by positive matches.<br>If not specified, advertised IP is selected as the first routable address of the node.  | |
+|`external` |<a href="#Config.cluster.etcd.external">EtcdExternalConfig</a> |Use an external etcd cluster instead of running etcd on the control plane nodes.<br><br>When set, Talos doesn't run the etcd service, and `ca`, `image`, `extraArgs`,<br>`advertisedSubnets` and `listenSubnets` must not be set. <details><summary>Show example(s)</summary>{{< highlight yaml >}}
+external:
+    # The list of external etcd client endpoints (https URLs).
+    endpoints:
+        - https://etcd-0.example.com:2379
+        - https://etcd-1.example.com:2379
+    # The CA certificate used to verify the external etcd server certificates.
+    ca:
+        crt: LS0tIEVYQU1QTEUgQ0VSVElGSUNBVEUgLS0t
+    # The client certificate and key used by kube-apiserver and Talos to access the external etcd.
+    client:
+        crt: LS0tIEVYQU1QTEUgQ0VSVElGSUNBVEUgLS0t
+        key: LS0tIEVYQU1QTEUgS0VZIC0tLQ==
+    prefix: /clusters/my-cluster # The key prefix to namespace this cluster's data in the external etcd.
+{{< /highlight >}}</details> | |
+
+
+
+
+#### external {#Config.cluster.etcd.external}
+
+EtcdExternalConfig represents the external etcd cluster configuration.
+
+
+
+{{< highlight yaml >}}
+cluster:
+    etcd:
+        external:
+            # The list of external etcd client endpoints (https URLs).
+            endpoints:
+                - https://etcd-0.example.com:2379
+                - https://etcd-1.example.com:2379
+            # The CA certificate used to verify the external etcd server certificates.
+            ca:
+                crt: LS0tIEVYQU1QTEUgQ0VSVElGSUNBVEUgLS0t
+            # The client certificate and key used by kube-apiserver and Talos to access the external etcd.
+            client:
+                crt: LS0tIEVYQU1QTEUgQ0VSVElGSUNBVEUgLS0t
+                key: LS0tIEVYQU1QTEUgS0VZIC0tLQ==
+            prefix: /clusters/my-cluster # The key prefix to namespace this cluster's data in the external etcd.
+{{< /highlight >}}
+
+
+| Field | Type | Description | Value(s) |
+|-------|------|-------------|----------|
+|`endpoints` |[]string |The list of external etcd client endpoints (https URLs). <details><summary>Show example(s)</summary>{{< highlight yaml >}}
+endpoints:
+    - https://etcd-0.example.com:2379
+    - https://etcd-1.example.com:2379
+{{< /highlight >}}</details> | |
+|`ca` |PEMEncodedCertificate |The CA certificate used to verify the external etcd server certificates.  | |
+|`client` |PEMEncodedCertificateAndKey |The client certificate and key used by kube-apiserver and Talos to access the external etcd.  | |
+|`prefix` |string |The key prefix to namespace this cluster's data in the external etcd.<br>It is prepended to the kube-apiserver `--etcd-prefix` (`<prefix>/registry`) and to the keys Talos uses. <details><summary>Show example(s)</summary>{{< highlight yaml >}}
+prefix: /clusters/my-cluster
+{{< /highlight >}}</details> | |
+
+
 
 
 
