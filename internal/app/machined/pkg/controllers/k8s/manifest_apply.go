@@ -42,6 +42,7 @@ import (
 	"github.com/siderolabs/talos/internal/pkg/etcd"
 	"github.com/siderolabs/talos/pkg/logging"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
+	etcdres "github.com/siderolabs/talos/pkg/machinery/resources/etcd"
 	"github.com/siderolabs/talos/pkg/machinery/resources/k8s"
 	"github.com/siderolabs/talos/pkg/machinery/resources/secrets"
 	"github.com/siderolabs/talos/pkg/machinery/resources/v1alpha1"
@@ -73,6 +74,12 @@ func (ctrl *ManifestApplyController) Inputs() []controller.Input {
 			Namespace: v1alpha1.NamespaceName,
 			Type:      v1alpha1.ServiceType,
 			ID:        optional.Some("etcd"),
+			Kind:      controller.InputWeak,
+		},
+		{
+			Namespace: etcdres.NamespaceName,
+			Type:      etcdres.ConfigType,
+			ID:        optional.Some(etcdres.ConfigID),
 			Kind:      controller.InputWeak,
 		},
 	}
@@ -110,8 +117,7 @@ func (ctrl *ManifestApplyController) Run(ctx context.Context, r controller.Runti
 
 		secrets := secretsResources.TypedSpec()
 
-		// wait for etcd to be healthy as controller relies on etcd for locking
-		etcdResource, err := safe.ReaderGetByID[*v1alpha1.Service](ctx, r, "etcd")
+		etcdConfig, err := safe.ReaderGetByID[*etcdres.Config](ctx, r, etcdres.ConfigID)
 		if err != nil {
 			if state.IsNotFoundError(err) {
 				continue
@@ -120,8 +126,20 @@ func (ctrl *ManifestApplyController) Run(ctx context.Context, r controller.Runti
 			return err
 		}
 
-		if !etcdResource.TypedSpec().Healthy {
-			continue
+		// wait for local etcd to be healthy as controller relies on etcd for locking
+		if !etcdConfig.TypedSpec().External() {
+			etcdResource, err := safe.ReaderGetByID[*v1alpha1.Service](ctx, r, "etcd")
+			if err != nil {
+				if state.IsNotFoundError(err) {
+					continue
+				}
+
+				return err
+			}
+
+			if !etcdResource.TypedSpec().Healthy {
+				continue
+			}
 		}
 
 		manifests, err := r.List(ctx, resource.NewMetadata(k8s.ControlPlaneNamespaceName, k8s.ManifestType, "", resource.VersionUndefined))
@@ -134,7 +152,7 @@ func (ctrl *ManifestApplyController) Run(ctx context.Context, r controller.Runti
 		})
 
 		if len(manifests.Items) > 0 {
-			if err = ctrl.applyManifests(ctx, logger, manifests, secrets); err != nil {
+			if err = ctrl.applyManifests(ctx, logger, etcdConfig.TypedSpec(), manifests, secrets); err != nil {
 				return err
 			}
 		}
@@ -158,6 +176,7 @@ func (ctrl *ManifestApplyController) Run(ctx context.Context, r controller.Runti
 func (ctrl *ManifestApplyController) applyManifests(
 	ctx context.Context,
 	logger *zap.Logger,
+	etcdConfig *etcdres.ConfigSpec,
 	manifests resource.List,
 	secrets *secrets.KubernetesCertsSpec,
 ) error {
@@ -197,7 +216,7 @@ func (ctrl *ManifestApplyController) applyManifests(
 		return err
 	}
 
-	if err = etcd.WithLock(ctx, constants.EtcdTalosManifestApplyMutex, logger, func() error {
+	if err = etcd.WithLock(ctx, etcdConfig, constants.EtcdTalosManifestApplyMutex, logger, func() error {
 		inv, err := ssa.GetInventory(ctx, k8sClient, constants.KubernetesInventoryNamespace, constants.KubernetesBootstrapManifestsInventoryName)
 		if err != nil {
 			return fmt.Errorf("error getting inventory: %w", err)

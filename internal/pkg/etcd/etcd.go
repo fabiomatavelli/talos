@@ -20,6 +20,7 @@ import (
 	"go.etcd.io/etcd/api/v3/v3rpc/rpctypes"
 	"go.etcd.io/etcd/client/pkg/v3/transport"
 	clientv3 "go.etcd.io/etcd/client/v3"
+	"go.etcd.io/etcd/client/v3/namespace"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 
@@ -75,6 +76,30 @@ func NewLocalClient(ctx context.Context, dialOpts ...grpc.DialOption) (client *C
 		[]string{nethelpers.JoinHostPort("localhost", constants.EtcdClientPort)},
 		dialOpts...,
 	)
+}
+
+// NewClientFromConfig initializes and returns an etcd client for Talos' own keys (locks, elections).
+//
+// It talks to the local etcd, or to the external etcd with all keys under the configured prefix.
+func NewClientFromConfig(ctx context.Context, cfg *etcdresource.ConfigSpec, dialOpts ...grpc.DialOption) (*Client, error) {
+	if !cfg.External() {
+		return NewLocalClient(ctx, dialOpts...)
+	}
+
+	client, err := NewClient(ctx, cfg.ExternalEndpoints, dialOpts...)
+	if err != nil {
+		return nil, err
+	}
+
+	if cfg.ExternalPrefix != "" {
+		prefix := cfg.ExternalPrefix + "/"
+
+		client.KV = namespace.NewKV(client.KV, prefix)
+		client.Watcher = namespace.NewWatcher(client.Watcher, prefix)
+		client.Lease = namespace.NewLease(client.Lease, prefix)
+	}
+
+	return client, nil
 }
 
 // NewClientFromControlPlaneIPs initializes and returns an etcd client

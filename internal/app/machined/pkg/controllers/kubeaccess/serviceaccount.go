@@ -21,9 +21,10 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	"github.com/siderolabs/talos/internal/app/machined/pkg/controllers/kubeaccess/serviceaccount"
-	"github.com/siderolabs/talos/internal/pkg/etcd"
+	etcdcli "github.com/siderolabs/talos/internal/pkg/etcd"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/resources/config"
+	"github.com/siderolabs/talos/pkg/machinery/resources/etcd"
 	"github.com/siderolabs/talos/pkg/machinery/resources/kubeaccess"
 	"github.com/siderolabs/talos/pkg/machinery/resources/secrets"
 )
@@ -57,6 +58,12 @@ func (ctrl *CRDController) Inputs() []controller.Input {
 			ID:        optional.Some(secrets.OSRootID),
 			Kind:      controller.InputWeak,
 		},
+		{
+			Namespace: etcd.NamespaceName,
+			Type:      etcd.ConfigType,
+			ID:        optional.Some(etcd.ConfigID),
+			Kind:      controller.InputWeak,
+		},
 	}
 }
 
@@ -67,7 +74,7 @@ func (ctrl *CRDController) Outputs() []controller.Output {
 
 // Run implements controller.Controller interface.
 //
-//nolint:gocyclo
+//nolint:gocyclo,cyclop
 func (ctrl *CRDController) Run(ctx context.Context, r controller.Runtime, logger *zap.Logger) error {
 	var crdControllerCtxCancel context.CancelFunc
 
@@ -155,6 +162,15 @@ func (ctrl *CRDController) Run(ctx context.Context, r controller.Runtime, logger
 
 		osSecretsSpec := osSecretsResource.TypedSpec()
 
+		etcdConfig, err := safe.ReaderGetByID[*etcd.Config](ctx, r, etcd.ConfigID)
+		if err != nil {
+			if !state.IsNotFoundError(err) {
+				return fmt.Errorf("error fetching etcd config: %w", err)
+			}
+
+			continue
+		}
+
 		kubeconfig, err := clientcmd.BuildConfigFromKubeconfigGetter("", func() (*clientcmdapi.Config, error) {
 			return clientcmd.Load([]byte(kubeSecretsSpec.LocalhostAdminKubeconfig))
 		})
@@ -174,6 +190,7 @@ func (ctrl *CRDController) Run(ctx context.Context, r controller.Runtime, logger
 				osSecretsSpec.IssuingCA,
 				kubeconfig,
 				kubeaccessConfigSpec,
+				etcdConfig.TypedSpec(),
 				logger,
 			)
 		}()
@@ -187,9 +204,10 @@ func (ctrl *CRDController) runCRDController(
 	talosCA *x509.PEMEncodedCertificateAndKey,
 	kubeconfig *rest.Config,
 	kubeaccessCfgSpec *kubeaccess.ConfigSpec,
+	etcdCfgSpec *etcd.ConfigSpec,
 	logger *zap.Logger,
 ) error {
-	return etcd.WithLock(ctx, constants.EtcdTalosServiceAccountCRDControllerMutex, logger, func() error {
+	return etcdcli.WithLock(ctx, etcdCfgSpec, constants.EtcdTalosServiceAccountCRDControllerMutex, logger, func() error {
 		crdCtrl, err := serviceaccount.NewCRDController(
 			talosCA,
 			kubeconfig,

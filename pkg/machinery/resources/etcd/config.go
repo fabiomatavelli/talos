@@ -35,6 +35,14 @@ type ConfigSpec struct {
 	Image string `yaml:"image" protobuf:"3"`
 
 	ExtraArgs map[string]ArgValues `yaml:"extraArgs" protobuf:"7"`
+
+	ExternalEndpoints []string `yaml:"externalEndpoints,omitempty" protobuf:"8"`
+	ExternalPrefix    string   `yaml:"externalPrefix,omitempty" protobuf:"9"`
+}
+
+// External reports whether etcd is an external cluster.
+func (spec *ConfigSpec) External() bool {
+	return len(spec.ExternalEndpoints) > 0
 }
 
 // ArgValues represents values for a command line argument which can be specified multiple times.

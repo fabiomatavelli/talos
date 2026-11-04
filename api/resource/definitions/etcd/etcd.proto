@@ -20,6 +20,8 @@ message ConfigSpec {
   repeated string listen_valid_subnets = 5;
   repeated string listen_exclude_subnets = 6;
   map<string, ArgValues> extra_args = 7;
+  repeated string external_endpoints = 8;
+  string external_prefix = 9;
 }
 
 // MemberSpec holds information about an etcd member.

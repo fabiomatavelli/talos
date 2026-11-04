@@ -78,6 +78,8 @@ type ConfigSpec struct {
 	ListenValidSubnets      []string               `protobuf:"bytes,5,rep,name=listen_valid_subnets,json=listenValidSubnets,proto3" json:"listen_valid_subnets,omitempty"`
 	ListenExcludeSubnets    []string               `protobuf:"bytes,6,rep,name=listen_exclude_subnets,json=listenExcludeSubnets,proto3" json:"listen_exclude_subnets,omitempty"`
 	ExtraArgs               map[string]*ArgValues  `protobuf:"bytes,7,rep,name=extra_args,json=extraArgs,proto3" json:"extra_args,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	ExternalEndpoints       []string               `protobuf:"bytes,8,rep,name=external_endpoints,json=externalEndpoints,proto3" json:"external_endpoints,omitempty"`
+	ExternalPrefix          string                 `protobuf:"bytes,9,opt,name=external_prefix,json=externalPrefix,proto3" json:"external_prefix,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
 }
@@ -152,6 +154,20 @@ func (x *ConfigSpec) GetExtraArgs() map[string]*ArgValues {
 		return x.ExtraArgs
 	}
 	return nil
+}
+
+func (x *ConfigSpec) GetExternalEndpoints() []string {
+	if x != nil {
+		return x.ExternalEndpoints
+	}
+	return nil
+}
+
+func (x *ConfigSpec) GetExternalPrefix() string {
+	if x != nil {
+		return x.ExternalPrefix
+	}
+	return ""
 }
 
 // MemberSpec holds information about an etcd member.
@@ -343,7 +359,7 @@ const file_resource_definitions_etcd_etcd_proto_rawDesc = "" +
 	"\n" +
 	"$resource/definitions/etcd/etcd.proto\x12\x1ftalos.resource.definitions.etcd\x1a\x13common/common.proto\"#\n" +
 	"\tArgValues\x12\x16\n" +
-	"\x06values\x18\x01 \x03(\tR\x06values\"\xc3\x03\n" +
+	"\x06values\x18\x01 \x03(\tR\x06values\"\x9b\x04\n" +
 	"\n" +
 	"ConfigSpec\x126\n" +
 	"\x17advertise_valid_subnets\x18\x01 \x03(\tR\x15advertiseValidSubnets\x12:\n" +
@@ -352,7 +368,9 @@ const file_resource_definitions_etcd_etcd_proto_rawDesc = "" +
 	"\x14listen_valid_subnets\x18\x05 \x03(\tR\x12listenValidSubnets\x124\n" +
 	"\x16listen_exclude_subnets\x18\x06 \x03(\tR\x14listenExcludeSubnets\x12Y\n" +
 	"\n" +
-	"extra_args\x18\a \x03(\v2:.talos.resource.definitions.etcd.ConfigSpec.ExtraArgsEntryR\textraArgs\x1ah\n" +
+	"extra_args\x18\a \x03(\v2:.talos.resource.definitions.etcd.ConfigSpec.ExtraArgsEntryR\textraArgs\x12-\n" +
+	"\x12external_endpoints\x18\b \x03(\tR\x11externalEndpoints\x12'\n" +
+	"\x0fexternal_prefix\x18\t \x01(\tR\x0eexternalPrefix\x1ah\n" +
 	"\x0eExtraArgsEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12@\n" +
 	"\x05value\x18\x02 \x01(\v2*.talos.resource.definitions.etcd.ArgValuesR\x05value:\x028\x01\")\n" +

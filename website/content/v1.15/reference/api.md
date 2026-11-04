@@ -8897,6 +8897,8 @@ ConfigSpec describes (some) configuration settings of etcd.
 | listen_valid_subnets | [string](#string) | repeated |  |
 | listen_exclude_subnets | [string](#string) | repeated |  |
 | extra_args | [ConfigSpec.ExtraArgsEntry](#talos.resource.definitions.etcd.ConfigSpec.ExtraArgsEntry) | repeated |  |
+| external_endpoints | [string](#string) | repeated |  |
+| external_prefix | [string](#string) |  |  |
 
 
 

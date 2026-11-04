@@ -23,6 +23,7 @@ import (
 	"github.com/siderolabs/talos/internal/pkg/etcd"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
 	"github.com/siderolabs/talos/pkg/machinery/nethelpers"
+	etcdres "github.com/siderolabs/talos/pkg/machinery/resources/etcd"
 	"github.com/siderolabs/talos/pkg/machinery/resources/k8s"
 	"github.com/siderolabs/talos/pkg/machinery/resources/network"
 	"github.com/siderolabs/talos/pkg/machinery/resources/v1alpha1"
@@ -156,20 +157,32 @@ func (vip *VIP) etcdElectionKey() string {
 	return fmt.Sprintf("%s:vip:election:%s", constants.EtcdRootTalosKey, vip.sharedIP.String())
 }
 
-func (vip *VIP) waitForPreconditions(ctx context.Context) error {
-	//  wait for the etcd to be up
-	_, err := vip.state.WatchFor(ctx, resource.NewMetadata(v1alpha1.NamespaceName, v1alpha1.ServiceType, "etcd", resource.VersionUndefined),
+func (vip *VIP) waitForPreconditions(ctx context.Context) (*etcdres.ConfigSpec, error) {
+	etcdConfig, err := vip.state.WatchFor(ctx, resource.NewMetadata(etcdres.NamespaceName, etcdres.ConfigType, etcdres.ConfigID, resource.VersionUndefined),
 		state.WithCondition(func(r resource.Resource) (bool, error) {
-			if resource.IsTombstone(r) {
-				return false, nil
-			}
-
-			svc := r.(*v1alpha1.Service) //nolint:forcetypeassert
-
-			return svc.TypedSpec().Running && svc.TypedSpec().Healthy, nil
+			return !resource.IsTombstone(r), nil
 		}))
 	if err != nil {
-		return fmt.Errorf("etcd health wait failure: %w", err)
+		return nil, fmt.Errorf("etcd config wait failure: %w", err)
+	}
+
+	etcdConfigSpec := etcdConfig.(*etcdres.Config).TypedSpec() //nolint:forcetypeassert
+
+	//  wait for the local etcd to be up
+	if !etcdConfigSpec.External() {
+		_, err = vip.state.WatchFor(ctx, resource.NewMetadata(v1alpha1.NamespaceName, v1alpha1.ServiceType, "etcd", resource.VersionUndefined),
+			state.WithCondition(func(r resource.Resource) (bool, error) {
+				if resource.IsTombstone(r) {
+					return false, nil
+				}
+
+				svc := r.(*v1alpha1.Service) //nolint:forcetypeassert
+
+				return svc.TypedSpec().Running && svc.TypedSpec().Healthy, nil
+			}))
+		if err != nil {
+			return nil, fmt.Errorf("etcd health wait failure: %w", err)
+		}
 	}
 
 	// wait for the kubelet lifecycle to be up, and not being torn down
@@ -186,10 +199,10 @@ func (vip *VIP) waitForPreconditions(ctx context.Context) error {
 			return true, nil
 		}))
 	if err != nil {
-		return fmt.Errorf("kubelet lifecycle wait failure: %w", err)
+		return nil, fmt.Errorf("kubelet lifecycle wait failure: %w", err)
 	}
 
-	return nil
+	return etcdConfigSpec, nil
 }
 
 //nolint:gocyclo,cyclop
@@ -197,7 +210,8 @@ func (vip *VIP) campaign(ctx context.Context, notifyCh chan<- struct{}) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	if err := vip.waitForPreconditions(ctx); err != nil {
+	etcdConfig, err := vip.waitForPreconditions(ctx)
+	if err != nil {
 		return fmt.Errorf("error waiting for preconditions: %w", err)
 	}
 
@@ -216,9 +230,9 @@ func (vip *VIP) campaign(ctx context.Context, notifyCh chan<- struct{}) error {
 		return errors.New("refusing to join election without a hostname")
 	}
 
-	ec, err := etcd.NewLocalClient(ctx)
+	ec, err := etcd.NewClientFromConfig(ctx, etcdConfig)
 	if err != nil {
-		return fmt.Errorf("failed to create local etcd client: %w", err)
+		return fmt.Errorf("failed to create etcd client: %w", err)
 	}
 
 	defer ec.Close() //nolint:errcheck
