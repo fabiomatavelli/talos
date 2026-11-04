@@ -83,6 +83,7 @@ func NewControlPlaneAPIServerFinalController() *ControlPlaneAPIServerFinalContro
 				out.TypedSpec().StartupProbesEnabled = cfg.StartupProbesEnabled
 				out.TypedSpec().UseAuthenticationConfig = cfg.UseAuthenticationConfig
 				out.TypedSpec().SELinuxLevel = cfg.SELinuxLevel
+				out.TypedSpec().EtcdPrefix = cfg.EtcdPrefix
 
 				enabledAdmissionPlugins := []string{"NodeRestriction"}
 
@@ -186,6 +187,13 @@ func NewControlPlaneAPIServerFinalController() *ControlPlaneAPIServerFinalContro
 				// sets the flag, so the user is free to point kube-apiserver at their own file.
 				if cfg.UseAuthenticationConfig {
 					mergePolicies["authentication-config"] = argsbuilder.MergeDenied
+				}
+
+				// etcd-prefix is only owned by Talos with external etcd, otherwise users may set it in extra args.
+				if cfg.EtcdPrefix != "" {
+					builder.Set("etcd-prefix", argsbuilder.Value{cfg.EtcdPrefix})
+
+					mergePolicies["etcd-prefix"] = argsbuilder.MergeDenied
 				}
 
 				if authenticationConfig != nil && authenticationConfig.TypedSpec().TokenWebhook != nil {

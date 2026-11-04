@@ -276,6 +276,18 @@ func NewControlPlaneAPIServerController() *ControlPlaneAPIServerController {
 					extraArgs[k] = k8s.ArgValues{Values: v}
 				}
 
+				etcdServers := []string{fmt.Sprintf("https://%s", nethelpers.JoinHostPort("127.0.0.1", constants.EtcdClientPort))}
+
+				var etcdPrefix string
+
+				if external := cfgProvider.Cluster().Etcd().External(); external != nil {
+					etcdServers = external.Endpoints()
+
+					if external.Prefix() != "" {
+						etcdPrefix = external.Prefix() + "/registry"
+					}
+				}
+
 				var selinuxLevel string
 				if cfgProvider.SecurityProfileConfig() != nil && cfgProvider.SecurityProfileConfig().SELinuxCategories() {
 					selinuxLevel = constants.KubernetesAPIServerSELinuxLevel
@@ -285,7 +297,8 @@ func NewControlPlaneAPIServerController() *ControlPlaneAPIServerController {
 					Image:                   cfgProvider.K8sAPIServerConfig().Image(),
 					CloudProvider:           cloudProvider,
 					ControlPlaneEndpoint:    cfgProvider.K8sClusterConfig().ClusterEndpoint().String(),
-					EtcdServers:             []string{fmt.Sprintf("https://%s", nethelpers.JoinHostPort("127.0.0.1", constants.EtcdClientPort))},
+					EtcdServers:             etcdServers,
+					EtcdPrefix:              etcdPrefix,
 					LocalPort:               cfgProvider.K8sAPIServerConfig().APIPort(),
 					ServiceCIDRs:            xslices.Map(cfgProvider.K8sNetworkConfig().ServiceCIDRs(), netip.Prefix.String),
 					ExtraArgs:               extraArgs,

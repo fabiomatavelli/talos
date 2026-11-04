@@ -10058,6 +10058,7 @@ APIServerConfigSpec is configuration for kube-apiserver.
 | use_authentication_config | [bool](#bool) |  |  |
 | args | [string](#string) | repeated |  |
 | se_linux_level | [string](#string) |  | SELinuxLevel is the fixed MCS level of the kube-apiserver pod, empty when pods run without categories. |
+| etcd_prefix | [string](#string) |  |  |
 
 
 

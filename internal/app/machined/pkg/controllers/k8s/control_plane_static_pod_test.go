@@ -11,6 +11,7 @@ import (
 
 	"github.com/cosi-project/runtime/pkg/resource"
 	"github.com/cosi-project/runtime/pkg/resource/rtestutils"
+	"github.com/siderolabs/crypto/x509"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/suite"
 	corev1 "k8s.io/api/core/v1"
@@ -21,6 +22,7 @@ import (
 	k8sctrl "github.com/siderolabs/talos/internal/app/machined/pkg/controllers/k8s"
 	"github.com/siderolabs/talos/internal/app/machined/pkg/controllers/k8s/internal/k8stemplates"
 	"github.com/siderolabs/talos/pkg/machinery/resources/k8s"
+	"github.com/siderolabs/talos/pkg/machinery/resources/secrets"
 	"github.com/siderolabs/talos/pkg/machinery/resources/v1alpha1"
 )
 
@@ -215,4 +217,35 @@ func TestControlPlaneStaticPodSuite(t *testing.T) {
 			suite.Require().NoError(suite.State().Destroy(suite.Ctx(), v1alpha1.NewService("etcd").Metadata()))
 		},
 	})
+}
+
+func TestControlPlaneStaticPodExternalEtcd(t *testing.T) {
+	t.Parallel()
+
+	suite.Run(t, &ControlPlaneStaticPodExternalEtcdSuite{
+		Timeout: 10 * time.Second,
+		AfterSetup: func(suite *ctest.DefaultSuite) {
+			suite.Require().NoError(suite.Runtime().RegisterController(&k8sctrl.ControlPlaneStaticPodController{}))
+		},
+	})
+}
+
+type ControlPlaneStaticPodExternalEtcdSuite struct {
+	ctest.DefaultSuite
+}
+
+// TestReconcile checks that static pods are rendered without a local etcd service.
+func (suite *ControlPlaneStaticPodExternalEtcdSuite) TestReconcile() {
+	suite.Create(k8s.NewConfigStatus(k8s.ControlPlaneNamespaceName, k8s.ConfigStatusStaticPodID))
+	suite.Create(k8s.NewSecretsStatus(k8s.ControlPlaneNamespaceName, k8s.StaticPodSecretsStaticPodID))
+	suite.Create(k8s.NewAPIServerConfig(k8s.FinalAPIServerConfigID))
+
+	ctest.AssertNoResource[*k8s.StaticPod](suite, k8s.APIServerID)
+
+	etcdRoot := secrets.NewEtcdRoot(secrets.EtcdRootID)
+	etcdRoot.TypedSpec().EtcdCA = &x509.PEMEncodedCertificateAndKey{Crt: []byte("ca")}
+	etcdRoot.TypedSpec().EtcdClient = &x509.PEMEncodedCertificateAndKey{Crt: []byte("crt"), Key: []byte("key")}
+	suite.Create(etcdRoot)
+
+	ctest.AssertResource(suite, k8s.APIServerID, func(*k8s.StaticPod, *assert.Assertions) {})
 }

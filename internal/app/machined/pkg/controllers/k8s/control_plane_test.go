@@ -87,6 +87,8 @@ func (suite *K8sControlPlaneSuite) TestReconcileDefaults() {
 			apiServerCfg := apiServer.TypedSpec()
 
 			assert.Empty(apiServerCfg.CloudProvider)
+			assert.Equal([]string{"https://127.0.0.1:2379"}, apiServerCfg.EtcdServers)
+			assert.Empty(apiServerCfg.EtcdPrefix)
 		},
 	)
 
@@ -109,6 +111,52 @@ func (suite *K8sControlPlaneSuite) TestReconcileDefaults() {
 		suite.Ctx(), suite.T(), suite.State(), []resource.ID{k8s.AuthorizationConfigID},
 		func(authorizationConfig *k8s.AuthorizationConfig, assert *assert.Assertions) {
 			assert.Equal(v1alpha1.APIServerDefaultAuthorizationConfigAuthorizers, authorizationConfig.TypedSpec().Config)
+		},
+	)
+}
+
+func (suite *K8sControlPlaneSuite) TestReconcileExternalEtcd() {
+	u, err := url.Parse("https://foo:6443")
+	suite.Require().NoError(err)
+
+	v1alpha1Cfg := &v1alpha1.Config{
+		ConfigVersion: "v1alpha1",
+		MachineConfig: &v1alpha1.MachineConfig{
+			MachineType: "controlplane",
+		},
+		ClusterConfig: &v1alpha1.ClusterConfig{
+			ControlPlane: &v1alpha1.ControlPlaneConfig{ //nolint:staticcheck // testing deprecated field
+				Endpoint: &v1alpha1.Endpoint{
+					URL: u,
+				},
+			},
+			EtcdConfig: &v1alpha1.EtcdConfig{
+				EtcdExternal: &v1alpha1.EtcdExternalConfig{
+					ExternalEndpoints: []string{"https://10.0.0.1:2379", "https://10.0.0.2:2379"},
+					ExternalPrefix:    "/clusters/foo",
+				},
+			},
+		},
+	}
+
+	cn := k8scfg.NewKubeNetworkConfigV1Alpha1()
+	cn.NetworkPodSubnets = []meta.Prefix{
+		{Prefix: netip.MustParsePrefix(constants.DefaultIPv4PodCIDR)},
+	}
+	cn.NetworkServiceSubnets = []meta.Prefix{
+		{Prefix: netip.MustParsePrefix(constants.DefaultIPv4ServiceCIDR)},
+	}
+
+	ctr, err := container.New(v1alpha1Cfg, cn)
+	suite.Require().NoError(err)
+
+	suite.setupMachine(config.NewMachineConfig(ctr))
+
+	rtestutils.AssertResources(
+		suite.Ctx(), suite.T(), suite.State(), []resource.ID{k8s.APIServerConfigID},
+		func(apiServer *k8s.APIServerConfig, assert *assert.Assertions) {
+			assert.Equal([]string{"https://10.0.0.1:2379", "https://10.0.0.2:2379"}, apiServer.TypedSpec().EtcdServers)
+			assert.Equal("/clusters/foo/registry", apiServer.TypedSpec().EtcdPrefix)
 		},
 	)
 }
