@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/hashicorp/go-multierror"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -34,6 +35,7 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/kubelet"
 	"github.com/siderolabs/talos/pkg/machinery/labels"
 	"github.com/siderolabs/talos/pkg/machinery/nethelpers"
+	"github.com/siderolabs/talos/pkg/machinery/resources/etcd"
 	"github.com/siderolabs/talos/pkg/machinery/role"
 )
 
@@ -1089,5 +1091,48 @@ func (c *Config) RuntimeValidate(ctx context.Context, st state.State, mode valid
 		}
 	}
 
+	if err := c.runtimeValidateEtcdExternal(ctx, st); err != nil {
+		result = multierror.Append(result, err)
+	}
+
 	return warnings, result.ErrorOrNil()
+}
+
+// runtimeValidateEtcdExternal rejects switching a running node between local and external etcd.
+//
+// The data is not migrated, so the switch would point kube-apiserver at a different datastore.
+func (c *Config) runtimeValidateEtcdExternal(ctx context.Context, st state.State) error {
+	if c.ClusterConfig == nil {
+		return nil
+	}
+
+	etcdConfig, err := safe.StateGetByID[*etcd.Config](ctx, st, etcd.ConfigID)
+	if err != nil {
+		if state.IsNotFoundError(err) {
+			// etcd is not configured yet (boot, maintenance mode or a worker): nothing to conflict with.
+			return nil
+		}
+
+		return err
+	}
+
+	modeName := func(external bool) string {
+		if external {
+			return "external"
+		}
+
+		return "local"
+	}
+
+	current := etcdConfig.TypedSpec().External()
+	requested := c.ClusterConfig.Etcd().External() != nil
+
+	if current != requested {
+		return fmt.Errorf(
+			"etcd can't be switched between local and external on a running node (current: %s, requested: %s); the data is not migrated",
+			modeName(current), modeName(requested),
+		)
+	}
+
+	return nil
 }
