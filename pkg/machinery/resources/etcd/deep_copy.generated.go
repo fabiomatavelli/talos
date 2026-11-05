@@ -40,6 +40,10 @@ func (o ConfigSpec) DeepCopy() ConfigSpec {
 			cp.ExtraArgs[k2] = cp_ExtraArgs_v2
 		}
 	}
+	if o.ExternalEndpoints != nil {
+		cp.ExternalEndpoints = make([]string, len(o.ExternalEndpoints))
+		copy(cp.ExternalEndpoints, o.ExternalEndpoints)
+	}
 	return cp
 }
 

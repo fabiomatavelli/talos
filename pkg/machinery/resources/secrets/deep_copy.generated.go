@@ -72,6 +72,9 @@ func (o EtcdRootSpec) DeepCopy() EtcdRootSpec {
 	if o.EtcdCA != nil {
 		cp.EtcdCA = o.EtcdCA.DeepCopy()
 	}
+	if o.EtcdClient != nil {
+		cp.EtcdClient = o.EtcdClient.DeepCopy()
+	}
 	return cp
 }
 

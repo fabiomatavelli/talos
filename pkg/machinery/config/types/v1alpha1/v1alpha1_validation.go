@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/cosi-project/runtime/pkg/safe"
 	"github.com/cosi-project/runtime/pkg/state"
 	"github.com/hashicorp/go-multierror"
 	"github.com/opencontainers/runtime-spec/specs-go"
@@ -34,6 +35,7 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/kubelet"
 	"github.com/siderolabs/talos/pkg/machinery/labels"
 	"github.com/siderolabs/talos/pkg/machinery/nethelpers"
+	"github.com/siderolabs/talos/pkg/machinery/resources/etcd"
 	"github.com/siderolabs/talos/pkg/machinery/role"
 )
 
@@ -943,6 +945,10 @@ func (k *KubeletConfig) Validate() ([]string, error) {
 func (e *EtcdConfig) Validate() error {
 	var result *multierror.Error
 
+	if e.EtcdExternal != nil {
+		return e.validateExternal()
+	}
+
 	if e.CA() == nil {
 		result = multierror.Append(result, ErrEmptyKeyCert)
 	}
@@ -965,6 +971,42 @@ func (e *EtcdConfig) Validate() error {
 		if _, err := sideronet.ParseSubnetOrAddress(cidr); err != nil {
 			result = multierror.Append(result, fmt.Errorf("etcd listen subnet is not valid: %q", cidr))
 		}
+	}
+
+	return result.ErrorOrNil()
+}
+
+//nolint:gocyclo
+func (e *EtcdConfig) validateExternal() error {
+	var result *multierror.Error
+
+	if e.RootCA != nil || e.ContainerImage != "" || len(e.EtcdExtraArgs) > 0 || e.EtcdSubnet != "" ||
+		len(e.EtcdAdvertisedSubnets) > 0 || len(e.EtcdListenSubnets) > 0 {
+		result = multierror.Append(result, errors.New("etcd ca, image, extraArgs, advertisedSubnets and listenSubnets can't be set with external etcd"))
+	}
+
+	ext := e.EtcdExternal
+
+	if len(ext.ExternalEndpoints) == 0 {
+		result = multierror.Append(result, errors.New("external etcd endpoints are required"))
+	}
+
+	for _, endpoint := range ext.ExternalEndpoints {
+		if u, err := url.Parse(endpoint); err != nil || u.Scheme != "https" || u.Host == "" {
+			result = multierror.Append(result, fmt.Errorf("external etcd endpoint should be a https URL: %q", endpoint))
+		}
+	}
+
+	if ext.ExternalCA == nil || len(ext.ExternalCA.Crt) == 0 {
+		result = multierror.Append(result, errors.New("external etcd ca certificate is required"))
+	}
+
+	if ext.ExternalClient == nil || len(ext.ExternalClient.Crt) == 0 || len(ext.ExternalClient.Key) == 0 {
+		result = multierror.Append(result, errors.New("external etcd client certificate and key are required"))
+	}
+
+	if ext.ExternalPrefix != "" && (!strings.HasPrefix(ext.ExternalPrefix, "/") || strings.HasSuffix(ext.ExternalPrefix, "/")) {
+		result = multierror.Append(result, fmt.Errorf("external etcd prefix should start and not end with '/': %q", ext.ExternalPrefix))
 	}
 
 	return result.ErrorOrNil()
@@ -1049,5 +1091,48 @@ func (c *Config) RuntimeValidate(ctx context.Context, st state.State, mode valid
 		}
 	}
 
+	if err := c.runtimeValidateEtcdExternal(ctx, st); err != nil {
+		result = multierror.Append(result, err)
+	}
+
 	return warnings, result.ErrorOrNil()
+}
+
+// runtimeValidateEtcdExternal rejects switching a running node between local and external etcd.
+//
+// The data is not migrated, so the switch would point kube-apiserver at a different datastore.
+func (c *Config) runtimeValidateEtcdExternal(ctx context.Context, st state.State) error {
+	if c.ClusterConfig == nil {
+		return nil
+	}
+
+	etcdConfig, err := safe.StateGetByID[*etcd.Config](ctx, st, etcd.ConfigID)
+	if err != nil {
+		if state.IsNotFoundError(err) {
+			// etcd is not configured yet (boot, maintenance mode or a worker): nothing to conflict with.
+			return nil
+		}
+
+		return err
+	}
+
+	modeName := func(external bool) string {
+		if external {
+			return "external"
+		}
+
+		return "local"
+	}
+
+	current := etcdConfig.TypedSpec().External()
+	requested := c.ClusterConfig.Etcd().External() != nil
+
+	if current != requested {
+		return fmt.Errorf(
+			"etcd can't be switched between local and external on a running node (current: %s, requested: %s); the data is not migrated",
+			modeName(current), modeName(requested),
+		)
+	}
+
+	return nil
 }

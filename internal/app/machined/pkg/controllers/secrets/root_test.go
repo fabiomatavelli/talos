@@ -19,6 +19,7 @@ import (
 	talosconfig "github.com/siderolabs/talos/pkg/machinery/config"
 	"github.com/siderolabs/talos/pkg/machinery/config/generate"
 	"github.com/siderolabs/talos/pkg/machinery/config/machine"
+	"github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
 	"github.com/siderolabs/talos/pkg/machinery/resources/config"
 	"github.com/siderolabs/talos/pkg/machinery/resources/secrets"
 )
@@ -125,6 +126,31 @@ func (suite *RootSuite) TestReconcileControlPlaneNoK8sEtcd() {
 
 	rtestutils.AssertNoResource[*secrets.EtcdRoot](suite.Ctx(), suite.T(), suite.State(), secrets.EtcdRootID)
 	rtestutils.AssertNoResource[*secrets.KubernetesRoot](suite.Ctx(), suite.T(), suite.State(), secrets.KubernetesRootID)
+}
+
+func (suite *RootSuite) TestReconcileControlPlaneExternalEtcd() {
+	input, err := generate.NewInput("test-cluster", "http://localhost:6443", "1.28.0")
+	suite.Require().NoError(err)
+
+	cfg, err := input.Config(machine.TypeControlPlane)
+	suite.Require().NoError(err)
+
+	external := &v1alpha1.EtcdExternalConfig{
+		ExternalEndpoints: []string{"https://10.0.0.1:2379"},
+		ExternalCA:        &x509.PEMEncodedCertificate{Crt: []byte("ca")},
+		ExternalClient:    &x509.PEMEncodedCertificateAndKey{Crt: []byte("crt"), Key: []byte("key")},
+	}
+	cfg.RawV1Alpha1().ClusterConfig.EtcdConfig = &v1alpha1.EtcdConfig{EtcdExternal: external}
+
+	suite.Require().NoError(suite.State().Create(suite.Ctx(), config.NewMachineConfig(cfg)))
+
+	rtestutils.AssertResources(
+		suite.Ctx(), suite.T(), suite.State(), []resource.ID{secrets.EtcdRootID},
+		func(res *secrets.EtcdRoot, asrt *assert.Assertions) {
+			asrt.Equal(&x509.PEMEncodedCertificateAndKey{Crt: []byte("ca")}, res.TypedSpec().EtcdCA)
+			asrt.Equal(external.ExternalClient, res.TypedSpec().EtcdClient)
+		},
+	)
 }
 
 func (suite *RootSuite) TestReconcileWorker() {

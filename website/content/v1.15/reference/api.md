@@ -8897,6 +8897,8 @@ ConfigSpec describes (some) configuration settings of etcd.
 | listen_valid_subnets | [string](#string) | repeated |  |
 | listen_exclude_subnets | [string](#string) | repeated |  |
 | extra_args | [ConfigSpec.ExtraArgsEntry](#talos.resource.definitions.etcd.ConfigSpec.ExtraArgsEntry) | repeated |  |
+| external_endpoints | [string](#string) | repeated |  |
+| external_prefix | [string](#string) |  |  |
 
 
 
@@ -10058,6 +10060,7 @@ APIServerConfigSpec is configuration for kube-apiserver.
 | use_authentication_config | [bool](#bool) |  |  |
 | args | [string](#string) | repeated |  |
 | se_linux_level | [string](#string) |  | SELinuxLevel is the fixed MCS level of the kube-apiserver pod, empty when pods run without categories. |
+| etcd_prefix | [string](#string) |  |  |
 
 
 
@@ -13782,6 +13785,7 @@ EtcdRootSpec describes etcd CA secrets.
 | Field | Type | Label | Description |
 | ----- | ---- | ----- | ----------- |
 | etcd_ca | [common.PEMEncodedCertificateAndKey](#common.PEMEncodedCertificateAndKey) |  |  |
+| etcd_client | [common.PEMEncodedCertificateAndKey](#common.PEMEncodedCertificateAndKey) |  | EtcdClient is set only for an external etcd: CA carries no key, and this client cert is used as is. |
 
 
 

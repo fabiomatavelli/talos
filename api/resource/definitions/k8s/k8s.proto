@@ -28,6 +28,7 @@ message APIServerConfigSpec {
   repeated string args = 16;
   // SELinuxLevel is the fixed MCS level of the kube-apiserver pod, empty when pods run without categories.
   string se_linux_level = 17;
+  string etcd_prefix = 18;
 }
 
 // AdmissionControlConfigSpec is configuration for kube-apiserver.

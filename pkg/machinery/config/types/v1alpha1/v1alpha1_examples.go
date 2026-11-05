@@ -69,6 +69,15 @@ func clusterEtcdExample() *EtcdConfig {
 	}
 }
 
+func clusterEtcdExternalExample() *EtcdExternalConfig {
+	return &EtcdExternalConfig{
+		ExternalEndpoints: []string{"https://etcd-0.example.com:2379", "https://etcd-1.example.com:2379"},
+		ExternalCA:        &x509.PEMEncodedCertificate{Crt: []byte("--- EXAMPLE CERTIFICATE ---")},
+		ExternalClient:    pemEncodedCertificateExample(),
+		ExternalPrefix:    "/clusters/my-cluster",
+	}
+}
+
 func clusterEtcdImageExample() string {
 	return (&EtcdConfig{}).Image()
 }

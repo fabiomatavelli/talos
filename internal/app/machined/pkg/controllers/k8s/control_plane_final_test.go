@@ -1165,6 +1165,55 @@ func (suite *ControlPlaneAPIServerFinalSuite) TestRejectsDeniedExtraArgs() {
 	}
 }
 
+func (suite *ControlPlaneAPIServerFinalSuite) TestEtcdPrefix() {
+	setK8sRoot(suite, secrets.KubernetesRootSpec{
+		APIAudiences: []string{"https://localhost:6443"},
+		IssuerURL:    "https://localhost:6443",
+	})
+
+	// with external etcd prefix, Talos owns the flag
+	in := k8s.NewAPIServerConfig(k8s.APIServerConfigID)
+	*in.TypedSpec() = k8s.APIServerConfigSpec{
+		Image:                "registry.k8s.io/kube-apiserver:v1.32.0",
+		ControlPlaneEndpoint: "https://localhost:6443",
+		EtcdServers:          []string{"https://10.0.0.1:2379", "https://10.0.0.2:2379"},
+		EtcdPrefix:           "/clusters/foo/registry",
+		LocalPort:            6443,
+		ServiceCIDRs:         []string{"10.96.0.0/12"},
+		ExtraArgs: map[string]k8s.ArgValues{
+			"etcd-prefix": {Values: []string{"/custom"}},
+		},
+	}
+	suite.Create(in)
+
+	ctest.AssertNoResource[*k8s.APIServerConfig](suite, k8s.FinalAPIServerConfigID)
+
+	ctest.UpdateWithConflicts(suite, in, func(r *k8s.APIServerConfig) error {
+		r.TypedSpec().ExtraArgs = nil
+
+		return nil
+	})
+
+	ctest.AssertResource(suite, k8s.FinalAPIServerConfigID, func(r *k8s.APIServerConfig, asrt *assert.Assertions) {
+		asrt.Contains(r.TypedSpec().Args, "--etcd-prefix=/clusters/foo/registry")
+		asrt.Contains(r.TypedSpec().Args, "--etcd-servers=https://10.0.0.1:2379,https://10.0.0.2:2379")
+	})
+
+	// without external etcd, etcd-prefix can be set via extra args
+	ctest.UpdateWithConflicts(suite, in, func(r *k8s.APIServerConfig) error {
+		r.TypedSpec().EtcdPrefix = ""
+		r.TypedSpec().ExtraArgs = map[string]k8s.ArgValues{
+			"etcd-prefix": {Values: []string{"/custom"}},
+		}
+
+		return nil
+	})
+
+	ctest.AssertResource(suite, k8s.FinalAPIServerConfigID, func(r *k8s.APIServerConfig, asrt *assert.Assertions) {
+		asrt.Contains(r.TypedSpec().Args, "--etcd-prefix=/custom")
+	})
+}
+
 func (suite *ControlPlaneAPIServerFinalSuite) TestAuthenticationTokenWebhook() {
 	setK8sRoot(suite, secrets.KubernetesRootSpec{
 		APIAudiences: []string{"https://localhost:6443"},

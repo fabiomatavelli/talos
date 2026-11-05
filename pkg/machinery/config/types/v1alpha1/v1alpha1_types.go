@@ -1245,6 +1245,51 @@ type EtcdConfig struct {
 	//    Negative subnet matches should be specified last to filter out IPs picked by positive matches.
 	//    If not specified, advertised IP is selected as the first routable address of the node.
 	EtcdListenSubnets []string `yaml:"listenSubnets,omitempty"`
+	//   description: |
+	//     Use an external etcd cluster instead of running etcd on the control plane nodes.
+	//
+	//     When set, Talos doesn't run the etcd service, and `ca`, `image`, `extraArgs`,
+	//     `advertisedSubnets` and `listenSubnets` must not be set.
+	//   examples:
+	//     - value: clusterEtcdExternalExample()
+	EtcdExternal *EtcdExternalConfig `yaml:"external,omitempty"`
+}
+
+var _ config.EtcdExternal = (*EtcdExternalConfig)(nil)
+
+// EtcdExternalConfig represents the external etcd cluster configuration.
+type EtcdExternalConfig struct {
+	//   description: |
+	//     The list of external etcd client endpoints (https URLs).
+	//   examples:
+	//     - value: '[]string{"https://etcd-0.example.com:2379", "https://etcd-1.example.com:2379"}'
+	ExternalEndpoints []string `yaml:"endpoints"`
+	//   description: |
+	//     The CA certificate used to verify the external etcd server certificates.
+	//   schema:
+	//     type: object
+	//     additionalProperties: false
+	//     properties:
+	//       crt:
+	//         type: string
+	ExternalCA *x509.PEMEncodedCertificate `yaml:"ca"`
+	//   description: |
+	//     The client certificate and key used by kube-apiserver and Talos to access the external etcd.
+	//   schema:
+	//     type: object
+	//     additionalProperties: false
+	//     properties:
+	//       crt:
+	//         type: string
+	//       key:
+	//         type: string
+	ExternalClient *x509.PEMEncodedCertificateAndKey `yaml:"client"`
+	//   description: |
+	//     The key prefix to namespace this cluster's data in the external etcd.
+	//     It is prepended to the kube-apiserver `--etcd-prefix` (`<prefix>/registry`) and to the keys Talos uses.
+	//   examples:
+	//     - value: '"/clusters/my-cluster"'
+	ExternalPrefix string `yaml:"prefix,omitempty"`
 }
 
 // ClusterNetworkConfig represents kube networking configuration options.

@@ -75,6 +75,14 @@ func NewConfigController() *ConfigController {
 
 				cfg.TypedSpec().ExtraArgs = extraArgs
 
+				cfg.TypedSpec().ExternalEndpoints = nil
+				cfg.TypedSpec().ExternalPrefix = ""
+
+				if external := machineConfig.Config().Cluster().Etcd().External(); external != nil {
+					cfg.TypedSpec().ExternalEndpoints = external.Endpoints()
+					cfg.TypedSpec().ExternalPrefix = external.Prefix()
+				}
+
 				return nil
 			},
 		},

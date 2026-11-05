@@ -9666,11 +9666,71 @@
           "description": "The listenSubnets field configures the networks for the etcd to listen for peer and client connections.\n\nIf listenSubnets is not set, but advertisedSubnets is set, listenSubnets defaults to\nadvertisedSubnets.\n\nIf neither advertisedSubnets nor listenSubnets is set, listenSubnets defaults to listen on all addresses.\n\nIPs can be excluded from the list by using negative match with !, e.g !10.0.0.0/8.\nNegative subnet matches should be specified last to filter out IPs picked by positive matches.\nIf not specified, advertised IP is selected as the first routable address of the node.\n",
           "markdownDescription": "The `listenSubnets` field configures the networks for the etcd to listen for peer and client connections.\n\nIf `listenSubnets` is not set, but `advertisedSubnets` is set, `listenSubnets` defaults to\n`advertisedSubnets`.\n\nIf neither `advertisedSubnets` nor `listenSubnets` is set, `listenSubnets` defaults to listen on all addresses.\n\nIPs can be excluded from the list by using negative match with `!`, e.g `!10.0.0.0/8`.\nNegative subnet matches should be specified last to filter out IPs picked by positive matches.\nIf not specified, advertised IP is selected as the first routable address of the node.",
           "x-intellij-html-description": "\u003cp\u003eThe \u003ccode\u003elistenSubnets\u003c/code\u003e field configures the networks for the etcd to listen for peer and client connections.\u003c/p\u003e\n\n\u003cp\u003eIf \u003ccode\u003elistenSubnets\u003c/code\u003e is not set, but \u003ccode\u003eadvertisedSubnets\u003c/code\u003e is set, \u003ccode\u003elistenSubnets\u003c/code\u003e defaults to\n\u003ccode\u003eadvertisedSubnets\u003c/code\u003e.\u003c/p\u003e\n\n\u003cp\u003eIf neither \u003ccode\u003eadvertisedSubnets\u003c/code\u003e nor \u003ccode\u003elistenSubnets\u003c/code\u003e is set, \u003ccode\u003elistenSubnets\u003c/code\u003e defaults to listen on all addresses.\u003c/p\u003e\n\n\u003cp\u003eIPs can be excluded from the list by using negative match with \u003ccode\u003e!\u003c/code\u003e, e.g \u003ccode\u003e!10.0.0.0/8\u003c/code\u003e.\nNegative subnet matches should be specified last to filter out IPs picked by positive matches.\nIf not specified, advertised IP is selected as the first routable address of the node.\u003c/p\u003e\n"
+        },
+        "external": {
+          "$ref": "#/$defs/v1alpha1.EtcdExternalConfig",
+          "title": "external",
+          "description": "Use an external etcd cluster instead of running etcd on the control plane nodes.\n\nWhen set, Talos doesn’t run the etcd service, and ca, image, extraArgs,\nadvertisedSubnets and listenSubnets must not be set.\n",
+          "markdownDescription": "Use an external etcd cluster instead of running etcd on the control plane nodes.\n\nWhen set, Talos doesn't run the etcd service, and `ca`, `image`, `extraArgs`,\n`advertisedSubnets` and `listenSubnets` must not be set.",
+          "x-intellij-html-description": "\u003cp\u003eUse an external etcd cluster instead of running etcd on the control plane nodes.\u003c/p\u003e\n\n\u003cp\u003eWhen set, Talos doesn\u0026rsquo;t run the etcd service, and \u003ccode\u003eca\u003c/code\u003e, \u003ccode\u003eimage\u003c/code\u003e, \u003ccode\u003eextraArgs\u003c/code\u003e,\n\u003ccode\u003eadvertisedSubnets\u003c/code\u003e and \u003ccode\u003elistenSubnets\u003c/code\u003e must not be set.\u003c/p\u003e\n"
         }
       },
       "additionalProperties": false,
       "type": "object",
       "description": "EtcdConfig represents the etcd configuration options."
+    },
+    "v1alpha1.EtcdExternalConfig": {
+      "properties": {
+        "endpoints": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array",
+          "title": "endpoints",
+          "description": "The list of external etcd client endpoints (https URLs).\n",
+          "markdownDescription": "The list of external etcd client endpoints (https URLs).",
+          "x-intellij-html-description": "\u003cp\u003eThe list of external etcd client endpoints (https URLs).\u003c/p\u003e\n"
+        },
+        "ca": {
+          "properties": {
+            "crt": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "title": "ca",
+          "description": "The CA certificate used to verify the external etcd server certificates.\n",
+          "markdownDescription": "The CA certificate used to verify the external etcd server certificates.",
+          "x-intellij-html-description": "\u003cp\u003eThe CA certificate used to verify the external etcd server certificates.\u003c/p\u003e\n"
+        },
+        "client": {
+          "properties": {
+            "crt": {
+              "type": "string"
+            },
+            "key": {
+              "type": "string"
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "title": "client",
+          "description": "The client certificate and key used by kube-apiserver and Talos to access the external etcd.\n",
+          "markdownDescription": "The client certificate and key used by kube-apiserver and Talos to access the external etcd.",
+          "x-intellij-html-description": "\u003cp\u003eThe client certificate and key used by kube-apiserver and Talos to access the external etcd.\u003c/p\u003e\n"
+        },
+        "prefix": {
+          "type": "string",
+          "title": "prefix",
+          "description": "The key prefix to namespace this cluster’s data in the external etcd.\nIt is prepended to the kube-apiserver --etcd-prefix (\u0026lt;prefix\u0026gt;/registry) and to the keys Talos uses.\n",
+          "markdownDescription": "The key prefix to namespace this cluster's data in the external etcd.\nIt is prepended to the kube-apiserver `--etcd-prefix` (`\u003cprefix\u003e/registry`) and to the keys Talos uses.",
+          "x-intellij-html-description": "\u003cp\u003eThe key prefix to namespace this cluster\u0026rsquo;s data in the external etcd.\nIt is prepended to the kube-apiserver \u003ccode\u003e--etcd-prefix\u003c/code\u003e (\u003ccode\u003e\u0026lt;prefix\u0026gt;/registry\u003c/code\u003e) and to the keys Talos uses.\u003c/p\u003e\n"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "description": "EtcdExternalConfig represents the external etcd cluster configuration."
     },
     "v1alpha1.ExternalCloudProviderConfig": {
       "properties": {

@@ -302,6 +302,13 @@ func (EtcdConfig) Doc() *encoder.Doc {
 				Description: "The `listenSubnets` field configures the networks for the etcd to listen for peer and client connections.\n\nIf `listenSubnets` is not set, but `advertisedSubnets` is set, `listenSubnets` defaults to\n`advertisedSubnets`.\n\nIf neither `advertisedSubnets` nor `listenSubnets` is set, `listenSubnets` defaults to listen on all addresses.\n\nIPs can be excluded from the list by using negative match with `!`, e.g `!10.0.0.0/8`.\nNegative subnet matches should be specified last to filter out IPs picked by positive matches.\nIf not specified, advertised IP is selected as the first routable address of the node.",
 				Comments:    [3]string{"" /* encoder.HeadComment */, "The `listenSubnets` field configures the networks for the etcd to listen for peer and client connections." /* encoder.LineComment */, "" /* encoder.FootComment */},
 			},
+			{
+				Name:        "external",
+				Type:        "EtcdExternalConfig",
+				Note:        "",
+				Description: "Use an external etcd cluster instead of running etcd on the control plane nodes.\n\nWhen set, Talos doesn't run the etcd service, and `ca`, `image`, `extraArgs`,\n`advertisedSubnets` and `listenSubnets` must not be set.",
+				Comments:    [3]string{"" /* encoder.HeadComment */, "Use an external etcd cluster instead of running etcd on the control plane nodes." /* encoder.LineComment */, "" /* encoder.FootComment */},
+			},
 		},
 	}
 
@@ -310,6 +317,58 @@ func (EtcdConfig) Doc() *encoder.Doc {
 	doc.Fields[0].AddExample("", clusterEtcdImageExample())
 	doc.Fields[1].AddExample("", pemEncodedCertificateExample())
 	doc.Fields[4].AddExample("", clusterEtcdAdvertisedSubnetsExample())
+	doc.Fields[6].AddExample("", clusterEtcdExternalExample())
+
+	return doc
+}
+
+func (EtcdExternalConfig) Doc() *encoder.Doc {
+	doc := &encoder.Doc{
+		Type:        "EtcdExternalConfig",
+		Comments:    [3]string{"" /* encoder.HeadComment */, "EtcdExternalConfig represents the external etcd cluster configuration." /* encoder.LineComment */, "" /* encoder.FootComment */},
+		Description: "EtcdExternalConfig represents the external etcd cluster configuration.",
+		AppearsIn: []encoder.Appearance{
+			{
+				TypeName:  "EtcdConfig",
+				FieldName: "external",
+			},
+		},
+		Fields: []encoder.Doc{
+			{
+				Name:        "endpoints",
+				Type:        "[]string",
+				Note:        "",
+				Description: "The list of external etcd client endpoints (https URLs).",
+				Comments:    [3]string{"" /* encoder.HeadComment */, "The list of external etcd client endpoints (https URLs)." /* encoder.LineComment */, "" /* encoder.FootComment */},
+			},
+			{
+				Name:        "ca",
+				Type:        "PEMEncodedCertificate",
+				Note:        "",
+				Description: "The CA certificate used to verify the external etcd server certificates.",
+				Comments:    [3]string{"" /* encoder.HeadComment */, "The CA certificate used to verify the external etcd server certificates." /* encoder.LineComment */, "" /* encoder.FootComment */},
+			},
+			{
+				Name:        "client",
+				Type:        "PEMEncodedCertificateAndKey",
+				Note:        "",
+				Description: "The client certificate and key used by kube-apiserver and Talos to access the external etcd.",
+				Comments:    [3]string{"" /* encoder.HeadComment */, "The client certificate and key used by kube-apiserver and Talos to access the external etcd." /* encoder.LineComment */, "" /* encoder.FootComment */},
+			},
+			{
+				Name:        "prefix",
+				Type:        "string",
+				Note:        "",
+				Description: "The key prefix to namespace this cluster's data in the external etcd.\nIt is prepended to the kube-apiserver `--etcd-prefix` (`<prefix>/registry`) and to the keys Talos uses.",
+				Comments:    [3]string{"" /* encoder.HeadComment */, "The key prefix to namespace this cluster's data in the external etcd." /* encoder.LineComment */, "" /* encoder.FootComment */},
+			},
+		},
+	}
+
+	doc.AddExample("", clusterEtcdExternalExample())
+
+	doc.Fields[0].AddExample("", []string{"https://etcd-0.example.com:2379", "https://etcd-1.example.com:2379"})
+	doc.Fields[3].AddExample("", "/clusters/my-cluster")
 
 	return doc
 }
@@ -516,6 +575,7 @@ func GetFileDoc() *encoder.FileDoc {
 			ClusterConfig{}.Doc(),
 			Endpoint{}.Doc(),
 			EtcdConfig{}.Doc(),
+			EtcdExternalConfig{}.Doc(),
 			ExternalCloudProviderConfig{}.Doc(),
 			AdminKubeconfigConfig{}.Doc(),
 			FeaturesConfig{}.Doc(),

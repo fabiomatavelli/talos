@@ -28,6 +28,8 @@ type EtcdRoot = typed.Resource[EtcdRootSpec, EtcdRootExtension]
 //gotagsrewrite:gen
 type EtcdRootSpec struct {
 	EtcdCA *x509.PEMEncodedCertificateAndKey `yaml:"etcdCA" protobuf:"1"`
+	// EtcdClient is set only for an external etcd: CA carries no key, and this client cert is used as is.
+	EtcdClient *x509.PEMEncodedCertificateAndKey `yaml:"etcdClient,omitempty" protobuf:"2"`
 }
 
 // NewEtcdRoot initializes a EtcdRoot resource.

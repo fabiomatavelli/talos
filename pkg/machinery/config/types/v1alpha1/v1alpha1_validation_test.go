@@ -10,6 +10,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/cosi-project/runtime/pkg/state"
+	"github.com/cosi-project/runtime/pkg/state/impl/inmem"
+	"github.com/cosi-project/runtime/pkg/state/impl/namespaced"
 	"github.com/siderolabs/crypto/x509"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +22,7 @@ import (
 	"github.com/siderolabs/talos/pkg/machinery/config/types/v1alpha1"
 	"github.com/siderolabs/talos/pkg/machinery/config/validation"
 	"github.com/siderolabs/talos/pkg/machinery/constants"
+	"github.com/siderolabs/talos/pkg/machinery/resources/etcd"
 	"github.com/siderolabs/talos/pkg/machinery/version"
 )
 
@@ -1369,6 +1373,94 @@ func TestValidate(t *testing.T) {
 			expectedError: "2 errors occurred:\n\t* etcd advertised subnet is not valid: \"1234:\"\n\t* etcd listen subnet is not valid: \"10\"\n\n",
 		},
 		{
+			name: "GoodEtcdExternal",
+			config: &v1alpha1.Config{
+				ConfigVersion: "v1alpha1",
+				MachineConfig: &v1alpha1.MachineConfig{
+					MachineType: "controlplane",
+					MachineCA: &x509.PEMEncodedCertificateAndKey{
+						Crt: []byte("foo"),
+						Key: []byte("bar"),
+					},
+				},
+				ClusterConfig: &v1alpha1.ClusterConfig{
+					ControlPlane: &v1alpha1.ControlPlaneConfig{
+						Endpoint: &v1alpha1.Endpoint{
+							endpointURL,
+						},
+					},
+					EtcdConfig: &v1alpha1.EtcdConfig{
+						EtcdExternal: &v1alpha1.EtcdExternalConfig{
+							ExternalEndpoints: []string{"https://10.0.0.1:2379", "https://etcd.example.com:2379"},
+							ExternalCA:        &x509.PEMEncodedCertificate{Crt: []byte("ca")},
+							ExternalClient:    &x509.PEMEncodedCertificateAndKey{Crt: []byte("crt"), Key: []byte("key")},
+							ExternalPrefix:    "/clusters/foo",
+						},
+					},
+				},
+			},
+			expectedError: "",
+		},
+		{
+			name: "BadEtcdExternal",
+			config: &v1alpha1.Config{
+				ConfigVersion: "v1alpha1",
+				MachineConfig: &v1alpha1.MachineConfig{
+					MachineType: "controlplane",
+					MachineCA: &x509.PEMEncodedCertificateAndKey{
+						Crt: []byte("foo"),
+						Key: []byte("bar"),
+					},
+				},
+				ClusterConfig: &v1alpha1.ClusterConfig{
+					ControlPlane: &v1alpha1.ControlPlaneConfig{
+						Endpoint: &v1alpha1.Endpoint{
+							endpointURL,
+						},
+					},
+					EtcdConfig: &v1alpha1.EtcdConfig{
+						RootCA:            &x509.PEMEncodedCertificateAndKey{},
+						EtcdListenSubnets: []string{"10.0.0.0/8"},
+						EtcdExternal: &v1alpha1.EtcdExternalConfig{
+							ExternalEndpoints: []string{"http://10.0.0.1:2379"},
+							ExternalClient:    &x509.PEMEncodedCertificateAndKey{Crt: []byte("crt")},
+							ExternalPrefix:    "clusters/foo/",
+						},
+					},
+				},
+			},
+			expectedError: "5 errors occurred:\n" +
+				"\t* etcd ca, image, extraArgs, advertisedSubnets and listenSubnets can't be set with external etcd\n" +
+				"\t* external etcd endpoint should be a https URL: \"http://10.0.0.1:2379\"\n" +
+				"\t* external etcd ca certificate is required\n" +
+				"\t* external etcd client certificate and key are required\n" +
+				"\t* external etcd prefix should start and not end with '/': \"clusters/foo/\"\n\n",
+		},
+		{
+			name: "EmptyEtcdExternal",
+			config: &v1alpha1.Config{
+				ConfigVersion: "v1alpha1",
+				MachineConfig: &v1alpha1.MachineConfig{
+					MachineType: "controlplane",
+					MachineCA: &x509.PEMEncodedCertificateAndKey{
+						Crt: []byte("foo"),
+						Key: []byte("bar"),
+					},
+				},
+				ClusterConfig: &v1alpha1.ClusterConfig{
+					ControlPlane: &v1alpha1.ControlPlaneConfig{
+						Endpoint: &v1alpha1.Endpoint{
+							endpointURL,
+						},
+					},
+					EtcdConfig: &v1alpha1.EtcdConfig{
+						EtcdExternal: &v1alpha1.EtcdExternalConfig{},
+					},
+				},
+			},
+			expectedError: "3 errors occurred:\n\t* external etcd endpoints are required\n\t* external etcd ca certificate is required\n\t* external etcd client certificate and key are required\n\n",
+		},
+		{
 			name: "GoodKubeletSubnet",
 			config: &v1alpha1.Config{
 				ConfigVersion: "v1alpha1",
@@ -2470,6 +2562,84 @@ func TestValidateKubernetesVersions(t *testing.T) {
 				test.expectedError = strings.ReplaceAll(test.expectedError, "VERSION", currentTalosVersion.String())
 
 				assert.EqualError(t, errors, test.expectedError)
+			}
+		})
+	}
+}
+
+func TestRuntimeValidateEtcdExternal(t *testing.T) {
+	t.Parallel()
+
+	external := &v1alpha1.EtcdExternalConfig{
+		ExternalEndpoints: []string{"https://etcd:2379"},
+	}
+
+	for _, test := range []struct {
+		name string
+
+		// current etcd mode to seed into the state (nil skips seeding).
+		currentExternal *bool
+		requested       *v1alpha1.EtcdExternalConfig
+
+		expectedError string
+	}{
+		{
+			name:      "no etcd config yet",
+			requested: external,
+		},
+		{
+			name:            "local stays local",
+			currentExternal: new(false),
+		},
+		{
+			name:            "external stays external",
+			currentExternal: new(true),
+			requested:       external,
+		},
+		{
+			name:            "local to external is rejected",
+			currentExternal: new(false),
+			requested:       external,
+
+			expectedError: "1 error occurred:\n\t* etcd can't be switched between local and external on a running node (current: local, requested: external); the data is not migrated\n\n",
+		},
+		{
+			name:            "external to local is rejected",
+			currentExternal: new(true),
+
+			expectedError: "1 error occurred:\n\t* etcd can't be switched between local and external on a running node (current: external, requested: local); the data is not migrated\n\n",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := t.Context()
+			st := state.WrapCore(namespaced.NewState(inmem.Build))
+
+			if test.currentExternal != nil {
+				cfg := etcd.NewConfig(etcd.NamespaceName, etcd.ConfigID)
+
+				if *test.currentExternal {
+					cfg.TypedSpec().ExternalEndpoints = external.ExternalEndpoints
+				}
+
+				require.NoError(t, st.Create(ctx, cfg))
+			}
+
+			c := &v1alpha1.Config{
+				ClusterConfig: &v1alpha1.ClusterConfig{
+					EtcdConfig: &v1alpha1.EtcdConfig{
+						EtcdExternal: test.requested,
+					},
+				},
+			}
+
+			_, err := c.RuntimeValidate(ctx, st, runtimeMode{})
+
+			if test.expectedError == "" {
+				require.NoError(t, err)
+			} else {
+				require.EqualError(t, err, test.expectedError)
 			}
 		})
 	}

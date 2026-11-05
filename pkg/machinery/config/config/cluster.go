@@ -40,6 +40,15 @@ type Etcd interface {
 	ExtraArgs() map[string][]string
 	AdvertisedSubnets() []string
 	ListenSubnets() []string
+	External() EtcdExternal
+}
+
+// EtcdExternal defines the requirements for a config that pertains to an external etcd cluster.
+type EtcdExternal interface {
+	Endpoints() []string
+	CA() *x509.PEMEncodedCertificate
+	Client() *x509.PEMEncodedCertificateAndKey
+	Prefix() string
 }
 
 // Token defines the requirements for a config that pertains to Kubernetes

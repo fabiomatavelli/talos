@@ -60,6 +60,21 @@ func (suite *ConfigSuite) TestReconcile() {
 			},
 		},
 		{
+			name: "external etcd",
+			etcdConfig: &v1alpha1.EtcdConfig{
+				EtcdExternal: &v1alpha1.EtcdExternalConfig{
+					ExternalEndpoints: []string{"https://10.0.0.1:2379"},
+					ExternalPrefix:    "/clusters/foo",
+				},
+			},
+			expectedConfig: etcd.ConfigSpec{
+				Image:             (&v1alpha1.EtcdConfig{}).Image(),
+				ExtraArgs:         map[string]etcd.ArgValues{},
+				ExternalEndpoints: []string{"https://10.0.0.1:2379"},
+				ExternalPrefix:    "/clusters/foo",
+			},
+		},
+		{
 			name: "extra args config",
 			etcdConfig: &v1alpha1.EtcdConfig{
 				ContainerImage: "foo/bar:v1.0.0",

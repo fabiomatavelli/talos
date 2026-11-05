@@ -17,6 +17,7 @@ import (
 	k8sadapter "github.com/siderolabs/talos/internal/app/machined/pkg/adapters/k8s"
 	"github.com/siderolabs/talos/internal/app/machined/pkg/controllers/k8s/internal/k8stemplates"
 	"github.com/siderolabs/talos/pkg/machinery/resources/k8s"
+	"github.com/siderolabs/talos/pkg/machinery/resources/secrets"
 	"github.com/siderolabs/talos/pkg/machinery/resources/v1alpha1"
 )
 
@@ -67,6 +68,12 @@ func (ctrl *ControlPlaneStaticPodController) Inputs() []controller.Input {
 			ID:        optional.Some("etcd"),
 			Kind:      controller.InputWeak,
 		},
+		{
+			Namespace: secrets.NamespaceName,
+			Type:      secrets.EtcdRootType,
+			ID:        optional.Some(secrets.EtcdRootID),
+			Kind:      controller.InputWeak,
+		},
 	}
 }
 
@@ -97,6 +104,14 @@ func (ctrl *ControlPlaneStaticPodController) Run(ctx context.Context, r controll
 			return fmt.Errorf("failed to get etcd service status: %w", err)
 		}
 
+		// with external etcd there is no local etcd service to wait for
+		etcdRoot, err := safe.ReaderGetByID[*secrets.EtcdRoot](ctx, r, secrets.EtcdRootID)
+		if err != nil && !state.IsNotFoundError(err) {
+			return fmt.Errorf("failed to get etcd root secrets: %w", err)
+		}
+
+		etcdReady := (etcdResource != nil && etcdResource.TypedSpec().Healthy) || (etcdRoot != nil && etcdRoot.TypedSpec().EtcdClient != nil)
+
 		secretsStatusResource, err := safe.ReaderGetByID[*k8s.SecretsStatus](ctx, r, k8s.StaticPodSecretsStaticPodID)
 		if err != nil && !state.IsNotFoundError(err) {
 			return fmt.Errorf("failed to get secrets status resource: %w", err)
@@ -110,7 +125,7 @@ func (ctrl *ControlPlaneStaticPodController) Run(ctx context.Context, r controll
 		r.StartTrackingOutputs()
 
 		// pre-condition to produce static pods
-		if etcdResource != nil && etcdResource.TypedSpec().Healthy && configStatusResource != nil && secretsStatusResource != nil {
+		if etcdReady && configStatusResource != nil && secretsStatusResource != nil {
 			configVersion := configStatusResource.TypedSpec().Version
 			secretsVersion := secretsStatusResource.TypedSpec().Version
 

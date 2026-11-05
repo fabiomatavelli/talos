@@ -147,3 +147,22 @@ func (suite *EtcdSuite) TestReconcile() {
 		asrt.Equal("host", peerCert.Subject.CommonName)
 	})
 }
+
+func (suite *EtcdSuite) TestReconcileExternal() {
+	client := &x509.PEMEncodedCertificateAndKey{Crt: []byte("crt"), Key: []byte("key")}
+
+	rootSecrets := secrets.NewEtcdRoot(secrets.EtcdRootID)
+	rootSecrets.TypedSpec().EtcdCA = &x509.PEMEncodedCertificateAndKey{Crt: []byte("ca")}
+	rootSecrets.TypedSpec().EtcdClient = client
+	suite.Create(rootSecrets)
+
+	// no network or time sync needed: nothing is signed
+	ctest.AssertResource(suite, secrets.EtcdID, func(certs *secrets.Etcd, asrt *assert.Assertions) {
+		etcdCerts := certs.TypedSpec()
+
+		asrt.Nil(etcdCerts.Etcd)
+		asrt.Nil(etcdCerts.EtcdPeer)
+		asrt.Equal(client, etcdCerts.EtcdAdmin)
+		asrt.Equal(client, etcdCerts.EtcdAPIServer)
+	})
+}

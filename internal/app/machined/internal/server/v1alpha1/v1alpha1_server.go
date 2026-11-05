@@ -430,6 +430,8 @@ func (s *Server) Rollback(ctx context.Context, in *machine.RollbackRequest) (*ma
 }
 
 // Bootstrap implements the machine.MachineServer interface.
+//
+//nolint:gocyclo
 func (s *Server) Bootstrap(ctx context.Context, in *machine.BootstrapRequest) (reply *machine.BootstrapResponse, err error) {
 	log.Printf("bootstrap request received")
 
@@ -439,6 +441,10 @@ func (s *Server) Bootstrap(ctx context.Context, in *machine.BootstrapRequest) (r
 
 	if err := machinehelper.CheckControlplane(ctx, s.Controller.Runtime().State().V1Alpha2().Resources(), "bootstrap"); err != nil {
 		return nil, err
+	}
+
+	if cfg := s.Controller.Runtime().Config(); cfg != nil && cfg.Cluster() != nil && cfg.Cluster().Etcd().External() != nil {
+		return nil, status.Error(codes.InvalidArgument, "etcd is external, bootstrap is not needed")
 	}
 
 	hasEtcdCA := s.Controller.Runtime().Config() != nil && s.Controller.Runtime().Config().Cluster() != nil && s.Controller.Runtime().Config().Cluster().Etcd().CA() != nil
@@ -538,7 +544,21 @@ func (s *Server) Upgrade(ctx context.Context, in *machine.UpgradeRequest) (*mach
 	}
 
 	if !inMaintenance && s.Controller.Runtime().Config().Machine().Type() != machinetype.TypeWorker && !in.GetForce() && !in.GetPreserve() {
-		etcdClient, err := etcd.NewClientFromControlPlaneIPs(ctx, s.Controller.Runtime().State().V1Alpha2().Resources())
+		etcdConfig, err := safe.StateGetByID[*etcdresource.Config](ctx, s.Controller.Runtime().State().V1Alpha2().Resources(), etcdresource.ConfigID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get etcd config: %w", err)
+		}
+
+		external := etcdConfig.TypedSpec().External()
+
+		var etcdClient *etcd.Client
+
+		if external {
+			etcdClient, err = etcd.NewClientFromConfig(ctx, etcdConfig.TypedSpec())
+		} else {
+			etcdClient, err = etcd.NewClientFromControlPlaneIPs(ctx, s.Controller.Runtime().State().V1Alpha2().Resources())
+		}
+
 		if err != nil {
 			return nil, fmt.Errorf("failed to create etcd client: %w", err)
 		}
@@ -554,8 +574,11 @@ func (s *Server) Upgrade(ctx context.Context, in *machine.UpgradeRequest) (*mach
 		// unlock the mutex once the API call is done, as it protects only pre-upgrade checks
 		defer unlocker()
 
-		if err = etcdClient.ValidateForUpgrade(ctx, s.Controller.Runtime().Config()); err != nil {
-			return nil, fmt.Errorf("error validating etcd for upgrade: %w", err)
+		// an external etcd doesn't lose a member when this node upgrades
+		if !external {
+			if err = etcdClient.ValidateForUpgrade(ctx, s.Controller.Runtime().Config()); err != nil {
+				return nil, fmt.Errorf("error validating etcd for upgrade: %w", err)
+			}
 		}
 	}
 
@@ -1938,9 +1961,22 @@ func (s *Server) Memory(ctx context.Context, in *emptypb.Empty) (reply *machine.
 	return reply, err
 }
 
+// checkLocalEtcd rejects etcd API calls when etcd is external, as Talos doesn't manage it.
+func (s *Server) checkLocalEtcd() error {
+	if cfg := s.Controller.Runtime().Config(); cfg != nil && cfg.Cluster() != nil && cfg.Cluster().Etcd().External() != nil {
+		return status.Error(codes.FailedPrecondition, "etcd is external and not managed by Talos")
+	}
+
+	return nil
+}
+
 // EtcdMemberList implements the machine.MachineServer interface.
 func (s *Server) EtcdMemberList(ctx context.Context, in *machine.EtcdMemberListRequest) (*machine.EtcdMemberListResponse, error) {
 	if err := machinehelper.CheckControlplane(ctx, s.Controller.Runtime().State().V1Alpha2().Resources(), "member list"); err != nil {
+		return nil, err
+	}
+
+	if err := s.checkLocalEtcd(); err != nil {
 		return nil, err
 	}
 
@@ -1993,6 +2029,10 @@ func (s *Server) EtcdRemoveMemberByID(ctx context.Context, in *machine.EtcdRemov
 		return nil, err
 	}
 
+	if err := s.checkLocalEtcd(); err != nil {
+		return nil, err
+	}
+
 	client, err := etcd.NewClientFromControlPlaneIPs(ctx, s.Controller.Runtime().State().V1Alpha2().Resources())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create etcd client: %w", err)
@@ -2023,6 +2063,10 @@ func (s *Server) EtcdLeaveCluster(ctx context.Context, in *machine.EtcdLeaveClus
 		return nil, err
 	}
 
+	if err := s.checkLocalEtcd(); err != nil {
+		return nil, err
+	}
+
 	client, err := etcd.NewClientFromControlPlaneIPs(ctx, s.Controller.Runtime().State().V1Alpha2().Resources())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create etcd client: %w", err)
@@ -2046,6 +2090,10 @@ func (s *Server) EtcdLeaveCluster(ctx context.Context, in *machine.EtcdLeaveClus
 // EtcdForfeitLeadership implements the machine.MachineServer interface.
 func (s *Server) EtcdForfeitLeadership(ctx context.Context, in *machine.EtcdForfeitLeadershipRequest) (*machine.EtcdForfeitLeadershipResponse, error) {
 	if err := machinehelper.CheckControlplane(ctx, s.Controller.Runtime().State().V1Alpha2().Resources(), "etcd forfeit leadership"); err != nil {
+		return nil, err
+	}
+
+	if err := s.checkLocalEtcd(); err != nil {
 		return nil, err
 	}
 
@@ -2080,6 +2128,10 @@ func (s *Server) EtcdForfeitLeadership(ctx context.Context, in *machine.EtcdForf
 // EtcdSnapshot implements the machine.MachineServer interface.
 func (s *Server) EtcdSnapshot(in *machine.EtcdSnapshotRequest, srv machine.MachineService_EtcdSnapshotServer) error {
 	if err := machinehelper.CheckControlplane(srv.Context(), s.Controller.Runtime().State().V1Alpha2().Resources(), "etcd snapshot"); err != nil {
+		return err
+	}
+
+	if err := s.checkLocalEtcd(); err != nil {
 		return err
 	}
 
@@ -2127,6 +2179,10 @@ func (s *Server) EtcdRecover(srv machine.MachineService_EtcdRecoverServer) error
 	}
 
 	if err := machinehelper.CheckControlplane(srv.Context(), s.Controller.Runtime().State().V1Alpha2().Resources(), "etcd recover"); err != nil {
+		return err
+	}
+
+	if err := s.checkLocalEtcd(); err != nil {
 		return err
 	}
 
@@ -2217,6 +2273,10 @@ func (s *Server) EtcdAlarmList(ctx context.Context, in *emptypb.Empty) (*machine
 		return nil, err
 	}
 
+	if err := s.checkLocalEtcd(); err != nil {
+		return nil, err
+	}
+
 	client, err := etcd.NewLocalClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create etcd client: %w", err)
@@ -2244,6 +2304,10 @@ func (s *Server) EtcdAlarmList(ctx context.Context, in *emptypb.Empty) (*machine
 // This method is available only on control plane nodes (which run etcd).
 func (s *Server) EtcdAlarmDisarm(ctx context.Context, in *emptypb.Empty) (*machine.EtcdAlarmDisarmResponse, error) {
 	if err := machinehelper.CheckControlplane(ctx, s.Controller.Runtime().State().V1Alpha2().Resources(), "etcd alarm disarm"); err != nil {
+		return nil, err
+	}
+
+	if err := s.checkLocalEtcd(); err != nil {
 		return nil, err
 	}
 
@@ -2280,6 +2344,10 @@ func (s *Server) EtcdDefragment(ctx context.Context, in *emptypb.Empty) (*machin
 		return nil, err
 	}
 
+	if err := s.checkLocalEtcd(); err != nil {
+		return nil, err
+	}
+
 	client, err := etcd.NewLocalClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create etcd client: %w", err)
@@ -2305,6 +2373,10 @@ func (s *Server) EtcdDefragment(ctx context.Context, in *emptypb.Empty) (*machin
 // This method is available only on control plane nodes (which run etcd).
 func (s *Server) EtcdStatus(ctx context.Context, in *emptypb.Empty) (*machine.EtcdStatusResponse, error) {
 	if err := machinehelper.CheckControlplane(ctx, s.Controller.Runtime().State().V1Alpha2().Resources(), "etcd status"); err != nil {
+		return nil, err
+	}
+
+	if err := s.checkLocalEtcd(); err != nil {
 		return nil, err
 	}
 
@@ -2362,6 +2434,10 @@ func (s *Server) EtcdDowngradeCancel(ctx context.Context, _ *emptypb.Empty) (*ma
 		return nil, err
 	}
 
+	if err := s.checkLocalEtcd(); err != nil {
+		return nil, err
+	}
+
 	client, err := etcd.NewLocalClient(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create etcd client: %w", err)
@@ -2393,6 +2469,10 @@ func (s *Server) EtcdDowngradeCancel(ctx context.Context, _ *emptypb.Empty) (*ma
 //nolint:dupl
 func (s *Server) EtcdDowngradeEnable(ctx context.Context, in *machine.EtcdDowngradeEnableRequest) (*machine.EtcdDowngradeEnableResponse, error) {
 	if err := machinehelper.CheckControlplane(ctx, s.Controller.Runtime().State().V1Alpha2().Resources(), "etcd downgrade enable"); err != nil {
+		return nil, err
+	}
+
+	if err := s.checkLocalEtcd(); err != nil {
 		return nil, err
 	}
 
@@ -2431,6 +2511,10 @@ func (s *Server) EtcdDowngradeEnable(ctx context.Context, in *machine.EtcdDowngr
 //nolint:dupl
 func (s *Server) EtcdDowngradeValidate(ctx context.Context, in *machine.EtcdDowngradeValidateRequest) (*machine.EtcdDowngradeValidateResponse, error) {
 	if err := machinehelper.CheckControlplane(ctx, s.Controller.Runtime().State().V1Alpha2().Resources(), "etcd downgrade validate"); err != nil {
+		return nil, err
+	}
+
+	if err := s.checkLocalEtcd(); err != nil {
 		return nil, err
 	}
 

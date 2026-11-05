@@ -10,11 +10,13 @@ import (
 
 	"go.etcd.io/etcd/client/v3/concurrency"
 	"go.uber.org/zap"
+
+	etcdresource "github.com/siderolabs/talos/pkg/machinery/resources/etcd"
 )
 
 // WithLock executes the given function exclusively by acquiring an Etcd lock with the given key.
-func WithLock(ctx context.Context, key string, logger *zap.Logger, f func() error) error {
-	etcdClient, err := NewLocalClient(ctx)
+func WithLock(ctx context.Context, cfg *etcdresource.ConfigSpec, key string, logger *zap.Logger, f func() error) error {
+	etcdClient, err := NewClientFromConfig(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("error creating etcd client: %w", err)
 	}
